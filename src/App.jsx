@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 /* ============================================================
    LIGA CARPINCHO — App de torneos de póker entre amigos
@@ -436,16 +436,29 @@ function ResumenTorneo({ t, data }) {
 }
 
 /* ============================================================
-   TAB: MESA (sorteo de posiciones)
+   TAB: MESA (sorteo de posiciones, con animacion y audio)
    ============================================================ */
 function TabMesa({ data, guardar, torneo, avisar }) {
   const [asignando, setAsignando] = useState(null); // nro de asiento libre elegido
+  const [anim, setAnim] = useState(null); // {asientos, orden, revelados, nAsientos}
+  const audioRef = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    const a = new Audio(import.meta.env.BASE_URL + "sorteo.mp3");
+    a.preload = "auto";
+    audioRef.current = a;
+    return () => {
+      a.pause();
+      clearTimeout(timerRef.current);
+    };
+  }, []);
 
   if (!torneo)
     return (
       <div className="lc-card lc-vacio">
         <Capi size={56} />
-        <p>Primero empezá un torneo en la pestaña ♠ Torneo.</p>
+        <p>Primero empeza un torneo en la pestana ♠ Torneo.</p>
       </div>
     );
 
@@ -461,9 +474,18 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 
   const cant = torneo.cantAsientos || jugadoresT.length;
 
+  const finalizarSorteo = (asientos, nAsientos, cortarAudio) => {
+    clearTimeout(timerRef.current);
+    if (cortarAudio && audioRef.current) audioRef.current.pause();
+    setAnim(null);
+    actualizarTorneo({ asientos, cantAsientos: nAsientos });
+    avisar("¡Posiciones sorteadas!");
+  };
+
   const sortear = (n) => {
+    if (anim) return;
     if (jugadoresT.length === 0) {
-      avisar("Anotá jugadores primero");
+      avisar("Anota jugadores primero");
       return;
     }
     const nAsientos = Math.max(n, jugadoresT.length);
@@ -477,8 +499,35 @@ function TabMesa({ data, guardar, torneo, avisar }) {
     jugadoresT.forEach((jid, i) => {
       asientos[baraja[i]] = jid;
     });
-    actualizarTorneo({ asientos, cantAsientos: nAsientos });
-    avisar("¡Cartas repartidas! Posiciones sorteadas");
+
+    // audio + ritmo de la revelacion segun su duracion
+    const a = audioRef.current;
+    let dur = 20.3;
+    try {
+      a.currentTime = 0;
+      const pr = a.play();
+      if (pr && pr.catch) pr.catch(() => {});
+      if (isFinite(a.duration) && a.duration > 1) dur = a.duration;
+    } catch (e) {
+      /* sin audio, la animacion sigue igual */
+    }
+
+    const orden = Object.keys(asientos)
+      .map(Number)
+      .sort((x, y) => x - y);
+    const intro = 2200; // fase de "barajando"
+    const paso = Math.min(1800, Math.max(500, (dur * 1000 - intro - 800) / orden.length));
+
+    setAnim({ asientos, orden, revelados: 0, nAsientos });
+
+    let i = 0;
+    const tick = () => {
+      i += 1;
+      setAnim((prev) => (prev ? { ...prev, revelados: i } : prev));
+      if (i < orden.length) timerRef.current = setTimeout(tick, paso);
+      else timerRef.current = setTimeout(() => finalizarSorteo(asientos, nAsientos, false), 1000);
+    };
+    timerRef.current = setTimeout(tick, intro);
   };
 
   const sinAsiento = jugadoresT.filter(
@@ -505,12 +554,15 @@ function TabMesa({ data, guardar, torneo, avisar }) {
     actualizarTorneo({ asientos });
   };
 
+  /* durante la animacion se muestra el sorteo nuevo; si no, lo guardado */
+  const asientosView = anim ? anim.asientos : torneo.asientos;
+  const cantView = anim ? anim.nAsientos : cant;
+  const revelado = (nro) => !anim || anim.orden.indexOf(nro) < anim.revelados;
+
   /* posiciones alrededor de la mesa ovalada */
-  const seats = Array.from({ length: cant }, (_, i) => i + 1);
-  const puntos = seats.map((nro, i) => {
-    const ang = (i / cant) * 2 * Math.PI - Math.PI / 2;
-    const x = 50 + 40 * Math.sin(ang) * -1 * -1; // horizontal
-    const y = 50 + 40 * Math.cos(ang) * -1;
+  const seats = Array.from({ length: cantView }, (_, i) => i + 1);
+  const puntosMesa = seats.map((nro, i) => {
+    const ang = (i / cantView) * 2 * Math.PI - Math.PI / 2;
     return { nro, x: 50 + 41 * Math.sin(ang), y: 50 - 41 * Math.cos(ang) };
   });
 
@@ -526,18 +578,19 @@ function TabMesa({ data, guardar, torneo, avisar }) {
               min={jugadoresT.length || 2}
               max={12}
               value={cant}
+              disabled={!!anim}
               onChange={(e) =>
                 actualizarTorneo({ cantAsientos: parseInt(e.target.value) || cant })
               }
             />
           </label>
-          <button className="lc-btn primario" onClick={() => sortear(cant)}>
-            🂠 Sortear posiciones
+          <button className="lc-btn primario" disabled={!!anim} onClick={() => sortear(cant)}>
+            {anim ? "Sorteando…" : "🂠 Sortear posiciones"}
           </button>
         </div>
         <p className="lc-nota">
           Se "embarajan" {cant} cartas y cada jugador recibe su asiento al azar. Los asientos
-          libres quedan en espera: cuando llegue alguien, tocá un asiento libre y elegilo.
+          libres quedan en espera: cuando llegue alguien, toca un asiento libre y elegilo.
         </p>
       </div>
 
@@ -545,32 +598,63 @@ function TabMesa({ data, guardar, torneo, avisar }) {
       <div className="lc-mesa-wrap">
         <div className="lc-mesa">
           <div className="lc-mesa-centro">
-            <Capi size={40} />
-            <span>{jugadoresT.length} en juego</span>
+            {anim ? (
+              <div className="lc-baraja">
+                <span className="lc-cartita c1" />
+                <span className="lc-cartita c2" />
+                <span className="lc-cartita c3" />
+                <span className="txt">Barajando…</span>
+              </div>
+            ) : (
+              <>
+                <Capi size={40} />
+                <span>{jugadoresT.length} en juego</span>
+              </>
+            )}
           </div>
-          {puntos.map(({ nro, x, y }) => {
-            const jid = torneo.asientos[nro];
+          {puntosMesa.map(({ nro, x, y }) => {
+            const jid = asientosView[nro];
             const eliminado = jid && torneo.posiciones[jid];
+            const oculto = anim && jid && !revelado(nro);
+            const recien = anim && jid && revelado(nro);
             return (
               <button
                 key={nro}
+                disabled={!!anim}
                 className={
                   "lc-asiento" +
                   (jid ? " ocupado" : " libre") +
-                  (eliminado ? " out" : "")
+                  (eliminado ? " out" : "") +
+                  (oculto ? " oculto" : "") +
+                  (recien ? " recien" : "")
                 }
                 style={{ left: x + "%", top: y + "%" }}
                 onClick={() => (jid ? liberarAsiento(nro) : elegirAsiento(nro))}
               >
-                <span className="nro">{nro}</span>
-                <span className="nom">{jid ? nombreDe(jid) : "Libre"}</span>
+                {oculto ? (
+                  <span className="lc-dorso" />
+                ) : (
+                  <>
+                    <span className="nro">{nro}</span>
+                    <span className="nom">{jid ? nombreDe(jid) : "Libre"}</span>
+                  </>
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      {sinAsiento.length > 0 && (
+      {anim && (
+        <button
+          className="lc-btn fantasma"
+          onClick={() => finalizarSorteo(anim.asientos, anim.nAsientos, true)}
+        >
+          Saltar animacion ⏭
+        </button>
+      )}
+
+      {!anim && sinAsiento.length > 0 && (
         <p className="lc-nota centro">
           Sin asiento: {sinAsiento.map(nombreDe).join(", ")}
         </p>
@@ -579,7 +663,7 @@ function TabMesa({ data, guardar, torneo, avisar }) {
       {asignando && (
         <div className="lc-modal" onClick={() => setAsignando(null)}>
           <div className="lc-modal-caja" onClick={(e) => e.stopPropagation()}>
-            <h3>Asiento {asignando} · ¿quién se sienta?</h3>
+            <h3>Asiento {asignando} · ¿quien se sienta?</h3>
             {sinAsiento.map((jid) => (
               <button key={jid} className="lc-btn opcion" onClick={() => asignarJugador(jid)}>
                 {nombreDe(jid)}
@@ -934,4 +1018,31 @@ const css = `
   .lc-toast{animation:lcpop .25s ease;}
   @keyframes lcpop{from{opacity:0; transform:translateX(-50%) translateY(-8px);}to{opacity:1;}}
 }
+
+/* --- animacion del sorteo --- */
+.lc-asiento.oculto{background:transparent; box-shadow:none; padding:0; border:none;}
+.lc-dorso{display:block; width:34px; height:48px; border-radius:6px;
+  background:repeating-linear-gradient(45deg,#B23B2E,#B23B2E 4px,#8E2B21 4px,#8E2B21 8px);
+  border:2.5px solid #fff; box-shadow:0 2px 5px rgba(0,0,0,.32);
+  animation:lcwiggle 1.1s ease-in-out infinite;}
+@keyframes lcwiggle{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(4deg);}}
+.lc-asiento.recien{animation:lcflip .55s ease;}
+@keyframes lcflip{
+  from{transform:translate(-50%,-50%) rotateY(90deg) scale(.65); opacity:0;}
+  to{transform:translate(-50%,-50%) rotateY(0deg) scale(1); opacity:1;}}
+.lc-baraja{position:relative; width:72px; height:64px; pointer-events:none;}
+.lc-cartita{position:absolute; left:20px; top:0; width:32px; height:46px; border-radius:5px;
+  background:repeating-linear-gradient(45deg,#B23B2E,#B23B2E 4px,#8E2B21 4px,#8E2B21 8px);
+  border:2px solid #fff; box-shadow:0 2px 4px rgba(0,0,0,.35);}
+.lc-cartita.c1{animation:lcshuf .9s ease-in-out infinite;}
+.lc-cartita.c2{animation:lcshuf .9s ease-in-out infinite .3s;}
+.lc-cartita.c3{animation:lcshuf .9s ease-in-out infinite .6s;}
+@keyframes lcshuf{
+  0%,100%{transform:translateX(0) rotate(0);}
+  33%{transform:translateX(-20px) rotate(-14deg);}
+  66%{transform:translateX(20px) rotate(14deg);}}
+.lc-baraja .txt{position:absolute; top:52px; left:50%; transform:translateX(-50%);
+  color:#fff; font-size:11px; font-weight:800; white-space:nowrap;}
+@media (prefers-reduced-motion:reduce){
+  .lc-dorso,.lc-cartita,.lc-asiento.recien{animation:none;}}
 `;
