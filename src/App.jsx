@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { conectarFirebase } from "./firebase";
 
 /* ============================================================
    LIGA CARPINCHO — App de torneos de póker entre amigos
@@ -7,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 
 const STORAGE_KEY = "liga-carpincho-v2"; // raiz con temporadas
 const STORAGE_KEY_V1 = "liga-carpincho-v1"; // datos viejos a migrar
+const FUENTE_KEY = "liga-carpincho-fuente"; // preferencia de este dispositivo: local | firebase
 
 const CONFIG_DEFAULT = {
   buyIn: 20000,
@@ -67,19 +69,21 @@ function normalizarData(d) {
   };
 }
 
+function normalizarRaiz(d) {
+  if (!(d && d.temporadas && d.temporadas.length)) return null;
+  return {
+    temporadaActualId: d.temporadaActualId || d.temporadas[0].id,
+    temporadas: d.temporadas.map((t) => ({ ...t, data: normalizarData(t.data || {}) })),
+  };
+}
+
 function cargarRaiz() {
   // v2: raiz con temporadas
   try {
     const r = localStorage.getItem(STORAGE_KEY);
     if (r) {
-      const d = JSON.parse(r);
-      if (d && d.temporadas && d.temporadas.length) {
-        return {
-          fuente: d.fuente || "local",
-          temporadaActualId: d.temporadaActualId || d.temporadas[0].id,
-          temporadas: d.temporadas.map((t) => ({ ...t, data: normalizarData(t.data || {}) })),
-        };
-      }
+      const n = normalizarRaiz(JSON.parse(r));
+      if (n) return n;
     }
   } catch (e) {
     /* sigue abajo */
@@ -93,7 +97,7 @@ function cargarRaiz() {
     /* sin datos v1 */
   }
   const temp = { id: uid(), nombre: String(new Date().getFullYear()), data: dataInicial };
-  return { fuente: "local", temporadaActualId: temp.id, temporadas: [temp] };
+  return { temporadaActualId: temp.id, temporadas: [temp] };
 }
 
 function persistir(raiz) {
@@ -108,14 +112,91 @@ export default function LigaCarpincho() {
   const [raiz, setRaiz] = useState(null);
   const [tab, setTab] = useState("torneo");
   const [aviso, setAviso] = useState(null);
+  const [fuente, setFuente] = useState(() => {
+    try {
+      return localStorage.getItem(FUENTE_KEY) || "local";
+    } catch (e) {
+      return "local";
+    }
+  });
+  const nubeRef = useRef(null); // {ref, setDoc} cuando hay conexion
 
   useEffect(() => {
-    setRaiz(cargarRaiz());
-  }, []);
+    let cancelado = false;
+    let unsub = null;
+
+    if (fuente === "local") {
+      nubeRef.current = null;
+      setRaiz(cargarRaiz());
+      return;
+    }
+
+    setRaiz(null); // pantalla de carga mientras conecta
+    conectarFirebase()
+      .then(({ db, doc, onSnapshot, setDoc }) => {
+        if (cancelado) return;
+        const ref = doc(db, "liga", "datos");
+        nubeRef.current = { ref, setDoc };
+        unsub = onSnapshot(
+          ref,
+          (snap) => {
+            if (cancelado) return;
+            if (snap.exists()) {
+              const n = normalizarRaiz(snap.data());
+              if (n) setRaiz(n);
+            } else {
+              // nube vacia: se inicializa con los datos de este dispositivo
+              const local = cargarRaiz();
+              setDoc(ref, local).catch((e) => console.error(e));
+              setRaiz(local);
+              setAviso("Datos de este celu enviados a la nube ☁️");
+              setTimeout(() => setAviso(null), 3000);
+            }
+          },
+          (err) => {
+            console.error(err);
+            if (cancelado) return;
+            setAviso("No se pudo conectar a la nube. Volviendo a datos locales.");
+            setTimeout(() => setAviso(null), 4000);
+            try {
+              localStorage.setItem(FUENTE_KEY, "local");
+            } catch (e2) {}
+            setFuente("local");
+          }
+        );
+      })
+      .catch((e) => {
+        console.error(e);
+        if (!cancelado) {
+          try {
+            localStorage.setItem(FUENTE_KEY, "local");
+          } catch (e2) {}
+          setFuente("local");
+        }
+      });
+
+    return () => {
+      cancelado = true;
+      if (unsub) unsub();
+    };
+  }, [fuente]);
 
   const guardarRaiz = (nuevaRaiz) => {
     setRaiz(nuevaRaiz);
-    persistir(nuevaRaiz);
+    if (fuente === "firebase" && nubeRef.current) {
+      nubeRef.current.setDoc(nubeRef.current.ref, nuevaRaiz).catch((e) => {
+        console.error("No se pudo guardar en la nube", e);
+      });
+    } else {
+      persistir(nuevaRaiz);
+    }
+  };
+
+  const cambiarFuente = (f) => {
+    try {
+      localStorage.setItem(FUENTE_KEY, f);
+    } catch (e) {}
+    setFuente(f);
   };
 
   const temporada = raiz
@@ -141,7 +222,7 @@ export default function LigaCarpincho() {
     return (
       <div className="lc-load">
         <Capi size={64} />
-        <p>Cargando la liga…</p>
+        <p>{fuente === "firebase" ? "Conectando con la nube ☁️…" : "Cargando la liga…"}</p>
         <style>{css}</style>
       </div>
     );
@@ -156,7 +237,10 @@ export default function LigaCarpincho() {
         <Capi size={46} />
         <div>
           <h1>Liga Carpincho</h1>
-          <span className="lc-sub">Póker entre amigos · Temporada {temporada.nombre}</span>
+          <span className="lc-sub">
+            Póker entre amigos · Temporada {temporada.nombre}
+            {fuente === "firebase" ? " · ☁️" : ""}
+          </span>
         </div>
       </header>
 
@@ -175,6 +259,8 @@ export default function LigaCarpincho() {
             avisar={avisar}
             raiz={raiz}
             guardarRaiz={guardarRaiz}
+            fuente={fuente}
+            cambiarFuente={cambiarFuente}
           />
         )}
       </main>
@@ -969,7 +1055,7 @@ function TabRanking({ data }) {
 /* ============================================================
    TAB: AJUSTES
    ============================================================ */
-function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz }) {
+function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarFuente }) {
   const cfg = data.config;
   const [nuevaTemp, setNuevaTemp] = useState("");
 
@@ -1131,15 +1217,27 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz }) {
       <div className="lc-card lc-form">
         <label className="lc-switch-row">
           <span>📱 Local (este dispositivo)</span>
-          <input type="radio" name="fuente" checked readOnly />
+          <input
+            type="radio"
+            name="fuente"
+            checked={fuente === "local"}
+            onChange={() => cambiarFuente("local")}
+          />
         </label>
-        <label className="lc-switch-row" style={{ opacity: 0.5 }}>
+        <label className="lc-switch-row">
           <span>☁️ Firebase (compartido entre todos)</span>
-          <input type="radio" name="fuente" disabled />
+          <input
+            type="radio"
+            name="fuente"
+            checked={fuente === "firebase"}
+            onChange={() => cambiarFuente("firebase")}
+          />
         </label>
         <p className="lc-nota">
-          Con Firebase todos los celulares van a ver los mismos datos en tiempo real.
-          Falta conectar el proyecto — próximamente.
+          Con la nube activada, todos los celulares que abran la app ven y editan los mismos
+          datos en tiempo real. La primera vez que alguien la activa, si la nube está vacía
+          se suben los datos de ese dispositivo. El modo local queda intacto en cada celu
+          como espacio de prueba.
         </p>
       </div>
 
