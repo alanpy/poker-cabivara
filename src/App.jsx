@@ -196,6 +196,10 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     });
   };
 
+  const cancelarTorneo = () => {
+    guardar({ ...data, torneos: data.torneos.filter((t) => t.id !== torneo.id) });
+  };
+
   const agregarJugador = () => {
     const nombre = nombreNuevo.trim();
     if (!nombre) return;
@@ -323,6 +327,12 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
           </button>
         </div>
       </div>
+
+      {total === 0 && (
+        <button className="lc-btn fantasma" onClick={cancelarTorneo}>
+          ✕ Cancelar torneo y volver a la lista
+        </button>
+      )}
 
       {/* lista de jugadores */}
       {ordenados.map((jid) => {
