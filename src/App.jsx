@@ -424,25 +424,73 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
 }
 
 function ResumenTorneo({ t, data }) {
-  const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
+  const [abierto, setAbierto] = useState(false);
   const cfg = data.config;
-  const pozo = Object.keys(t.entradas).reduce((acc, jid) => {
+  const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
+
+  const jugadores = Object.keys(t.entradas);
+  const pozo = jugadores.reduce((acc, jid) => {
     const e = t.entradas[jid];
     return acc + e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
   }, 0);
-  const ganador = Object.keys(t.posiciones).find((jid) => t.posiciones[jid] === 1);
+  const ganador = jugadores.find((jid) => t.posiciones[jid] === 1);
+  const ordenados = [...jugadores].sort(
+    (a, b) => (t.posiciones[a] || 999) - (t.posiciones[b] || 999)
+  );
+  const premioDe = (pos) =>
+    pos >= 1 && pos <= cfg.premios.length ? (pozo * cfg.premios[pos - 1]) / 100 : 0;
+  const iconoPos = (pos) =>
+    pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : pos + "º";
+
   return (
-    <div className="lc-card lc-resumen">
-      <div>
-        <strong>{t.fecha}</strong>
-        <span>
-          {Object.keys(t.entradas).length} jugadores · pozo {fmtGs(pozo)}
-        </span>
-      </div>
-      {ganador && (
+    <div className="lc-card lc-resumen-wrap">
+      <button className="lc-resumen" onClick={() => setAbierto(!abierto)}>
+        <div>
+          <strong>{t.fecha}</strong>
+          <span>
+            {jugadores.length} jugadores · pozo {fmtGs(pozo)}
+          </span>
+        </div>
         <span className="lc-ganador">
-          <span className="medalla oro">1º</span> {nombreDe(ganador)}
+          {ganador && (
+            <>
+              <span className="medalla oro">1º</span> {nombreDe(ganador)}
+            </>
+          )}
+          <span className={"lc-flecha" + (abierto ? " abierta" : "")}>▾</span>
         </span>
+      </button>
+
+      {abierto && (
+        <div className="lc-resumen-det">
+          {ordenados.map((jid) => {
+            const pos = t.posiciones[jid];
+            const e = t.entradas[jid];
+            const premio = pos ? premioDe(pos) : 0;
+            return (
+              <div key={jid} className="fila">
+                <span className="pos">{pos ? iconoPos(pos) : "·"}</span>
+                <span className="nom">
+                  {nombreDe(jid)}
+                  <small>
+                    {e.buyins} entrada{e.buyins > 1 ? "s" : ""}
+                    {e.addon ? " + add-on" : ""}
+                  </small>
+                </span>
+                <span className="pts">{pos ? (cfg.puntos[pos - 1] || 0) + " pts" : ""}</span>
+                <span className="premio">{premio > 0 ? fmtGs(premio) : ""}</span>
+              </div>
+            );
+          })}
+          <div className="fila casa">
+            <span className="pos">🏠</span>
+            <span className="nom">
+              Casa <small>caja común · {cfg.casa}%</small>
+            </span>
+            <span className="pts"></span>
+            <span className="premio">{fmtGs((pozo * cfg.casa) / 100)}</span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -989,10 +1037,29 @@ const css = `
 .lc-premios span{color:var(--suave);}
 .lc-premios strong{font-variant-numeric:tabular-nums;}
 
-.lc-resumen{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+.lc-resumen-wrap{padding:0; overflow:hidden;}
+.lc-resumen{display:flex; justify-content:space-between; align-items:center; gap:8px;
+  width:100%; border:none; background:none; padding:14px; cursor:pointer;
+  font-family:inherit; text-align:left; color:var(--tinta); font-size:15px;}
 .lc-resumen div{display:flex; flex-direction:column;}
 .lc-resumen span{font-size:12.5px; color:var(--suave);}
-.lc-ganador{font-weight:700; font-size:14px; display:flex; align-items:center; gap:6px;}
+.lc-ganador{font-weight:700; font-size:14px; display:flex; align-items:center; gap:6px;
+  color:var(--tinta) !important;}
+.lc-flecha{display:inline-block; transition:transform .2s ease; color:var(--suave); font-size:14px;}
+.lc-flecha.abierta{transform:rotate(180deg);}
+.lc-resumen-det{border-top:1px solid var(--linea); padding:6px 14px 10px; background:#FCF9F2;}
+.lc-resumen-det .fila{display:grid; grid-template-columns:34px 1fr auto auto;
+  gap:8px; align-items:center; padding:7px 0; border-bottom:1px dashed var(--linea);
+  font-size:14px;}
+.lc-resumen-det .fila:last-child{border-bottom:none;}
+.lc-resumen-det .pos{text-align:center; font-size:15px;}
+.lc-resumen-det .nom{font-weight:700; display:flex; flex-direction:column; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.lc-resumen-det .nom small{font-weight:600; color:var(--suave); font-size:11.5px;}
+.lc-resumen-det .pts{color:var(--marron); font-weight:700; font-size:12.5px;}
+.lc-resumen-det .premio{font-weight:800; color:var(--felt); font-size:13px;
+  font-variant-numeric:tabular-nums; min-width:70px; text-align:right;}
+.lc-resumen-det .fila.casa .nom{color:var(--suave);}
 
 .lc-sorteo-controles{display:flex; gap:10px; align-items:flex-end;}
 .lc-sorteo-controles label{display:flex; flex-direction:column; gap:4px; font-size:12px;
