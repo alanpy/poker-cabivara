@@ -14,7 +14,10 @@ const CONFIG_DEFAULT = {
   premios: [50, 30, 10], // 1º, 2º, 3º (%)
   casa: 10, // % para la caja
   puntos: [20, 15, 12, 10, 8, 6, 5, 4, 3, 2], // puntos por posición 1..10
+  ads: true, // mostrar "publicidad" antes de empezar un torneo
 };
+
+const ADS_VIDEOS = ["xh_7D0Nrq24", "w6qAtapjGFA", "P0P8EWoff4w"];
 
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -145,7 +148,17 @@ export default function LigaCarpincho() {
    ============================================================ */
 function TabTorneo({ data, guardar, torneo, avisar }) {
   const [nombreNuevo, setNombreNuevo] = useState("");
+  const [ad, setAd] = useState(null); // {id, seg}
   const cfg = data.config;
+
+  useEffect(() => {
+    if (!ad || ad.seg <= 0) return;
+    const t = setTimeout(
+      () => setAd((a) => (a ? { ...a, seg: a.seg - 1 } : a)),
+      1000
+    );
+    return () => clearTimeout(t);
+  }, [ad]);
 
   const crearTorneo = () => {
     const t = {
@@ -161,6 +174,19 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     guardar({ ...data, torneos: [...data.torneos, t] });
   };
 
+  const alEmpezar = () => {
+    if (cfg.ads !== false) {
+      setAd({ id: ADS_VIDEOS[Math.floor(Math.random() * ADS_VIDEOS.length)], seg: 5 });
+    } else {
+      crearTorneo();
+    }
+  };
+
+  const cerrarAd = () => {
+    setAd(null);
+    crearTorneo();
+  };
+
   if (!torneo) {
     const cerrados = [...data.torneos].filter((t) => t.cerrado).reverse();
     return (
@@ -168,10 +194,30 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
         <div className="lc-card lc-vacio">
           <Capi size={56} />
           <p>No hay torneo en juego.</p>
-          <button className="lc-btn primario" onClick={crearTorneo}>
+          <button className="lc-btn primario" onClick={alEmpezar}>
             Empezar torneo de hoy
           </button>
         </div>
+
+        {ad && (
+          <div className="lc-ad">
+            <span className="etiqueta">Publicidad</span>
+            <iframe
+              className="marco"
+              src={
+                "https://www.youtube.com/embed/" +
+                ad.id +
+                "?autoplay=1&playsinline=1&rel=0"
+              }
+              title="Publicidad"
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+            <button className="lc-ad-cerrar" disabled={ad.seg > 0} onClick={cerrarAd}>
+              {ad.seg > 0 ? "Cerrar en " + ad.seg + "…" : "✕ Cerrar"}
+            </button>
+          </div>
+        )}
         {cerrados.length > 0 && (
           <>
             <h2 className="lc-h2">Torneos anteriores</h2>
@@ -940,6 +986,18 @@ function TabAjustes({ data, guardar, avisar }) {
         ))}
       </div>
 
+      <h2 className="lc-h2">Otros</h2>
+      <div className="lc-card lc-form">
+        <label className="lc-switch-row">
+          <span>Mostrar ads antes de empezar un torneo</span>
+          <input
+            type="checkbox"
+            checked={cfg.ads !== false}
+            onChange={(e) => setCfg({ ads: e.target.checked })}
+          />
+        </label>
+      </div>
+
       <button
         className="lc-btn fantasma"
         onClick={() => {
@@ -1187,4 +1245,21 @@ const css = `
 .lc-t2-fila.head .fijo-der{font-size:11px; font-weight:800; color:var(--suave);}
 .lc-t2-fila.lider{background:#FDF3E4;}
 .lc-t2-fila.lider .fijo-izq,.lc-t2-fila.lider .fijo-der{background:#FDF3E4;}
+
+/* --- "publicidad" antes del torneo --- */
+.lc-ad{position:fixed; inset:0; background:rgba(5,5,5,.94); z-index:60;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; padding:16px;}
+.lc-ad .etiqueta{color:#999; font-size:11px; letter-spacing:3px; text-transform:uppercase;
+  font-weight:800;}
+.lc-ad .marco{width:100%; max-width:520px; aspect-ratio:16/9; border:none;
+  border-radius:12px; background:#000; box-shadow:0 8px 30px rgba(0,0,0,.6);}
+.lc-ad-cerrar{position:absolute; top:16px; right:16px; border:none; border-radius:999px;
+  padding:10px 16px; font-weight:800; font-family:inherit; font-size:14px;
+  cursor:pointer; background:#fff; color:#111;}
+.lc-ad-cerrar:disabled{background:rgba(255,255,255,.22); color:#fff; cursor:default;}
+.lc-switch-row{flex-direction:row !important; align-items:center;
+  justify-content:space-between; gap:12px !important; font-size:14px !important;
+  color:var(--tinta) !important;}
+.lc-switch-row input{width:22px; height:22px; accent-color:var(--naranja); flex-shrink:0;}
 `;
