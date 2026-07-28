@@ -5,7 +5,8 @@ import { useState, useEffect, useRef } from "react";
    Mobile-first · Tema: carpincho 🧡
    ============================================================ */
 
-const STORAGE_KEY = "liga-carpincho-v1";
+const STORAGE_KEY = "liga-carpincho-v2"; // raiz con temporadas
+const STORAGE_KEY_V1 = "liga-carpincho-v1"; // datos viejos a migrar
 
 const CONFIG_DEFAULT = {
   buyIn: 20000,
@@ -51,36 +52,84 @@ function Capi({ size = 44 }) {
   );
 }
 
-/* ---------- Persistencia (localStorage del navegador) ---------- */
-function cargar() {
+/* ---------- Persistencia (localStorage del navegador) ----------
+   Estructura raiz: { fuente, temporadaActualId, temporadas: [{id, nombre, data}] }
+   donde data = { config, jugadores, torneos } (una "libreta" por temporada) */
+function datosVacios() {
+  return { config: CONFIG_DEFAULT, jugadores: [], torneos: [] };
+}
+
+function normalizarData(d) {
+  return {
+    config: { ...CONFIG_DEFAULT, ...(d.config || {}) },
+    jugadores: d.jugadores || [],
+    torneos: d.torneos || [],
+  };
+}
+
+function cargarRaiz() {
+  // v2: raiz con temporadas
   try {
     const r = localStorage.getItem(STORAGE_KEY);
     if (r) {
       const d = JSON.parse(r);
-      return { config: { ...CONFIG_DEFAULT, ...d.config }, jugadores: d.jugadores || [], torneos: d.torneos || [] };
+      if (d && d.temporadas && d.temporadas.length) {
+        return {
+          fuente: d.fuente || "local",
+          temporadaActualId: d.temporadaActualId || d.temporadas[0].id,
+          temporadas: d.temporadas.map((t) => ({ ...t, data: normalizarData(t.data || {}) })),
+        };
+      }
     }
   } catch (e) {
-    /* sin datos guardados todavía */
+    /* sigue abajo */
   }
-  return { config: CONFIG_DEFAULT, jugadores: [], torneos: [] };
+  // migracion desde v1 (una sola temporada con todo lo existente)
+  let dataInicial = datosVacios();
+  try {
+    const v1 = localStorage.getItem(STORAGE_KEY_V1);
+    if (v1) dataInicial = normalizarData(JSON.parse(v1));
+  } catch (e) {
+    /* sin datos v1 */
+  }
+  const temp = { id: uid(), nombre: String(new Date().getFullYear()), data: dataInicial };
+  return { fuente: "local", temporadaActualId: temp.id, temporadas: [temp] };
+}
+
+function persistir(raiz) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(raiz));
+  } catch (e) {
+    console.error("No se pudo guardar", e);
+  }
 }
 
 export default function LigaCarpincho() {
-  const [data, setData] = useState(null);
+  const [raiz, setRaiz] = useState(null);
   const [tab, setTab] = useState("torneo");
   const [aviso, setAviso] = useState(null);
 
   useEffect(() => {
-    setData(cargar());
+    setRaiz(cargarRaiz());
   }, []);
 
+  const guardarRaiz = (nuevaRaiz) => {
+    setRaiz(nuevaRaiz);
+    persistir(nuevaRaiz);
+  };
+
+  const temporada = raiz
+    ? raiz.temporadas.find((t) => t.id === raiz.temporadaActualId) || raiz.temporadas[0]
+    : null;
+  const data = temporada ? temporada.data : null;
+
   const guardar = (nuevo) => {
-    setData(nuevo);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nuevo));
-    } catch (e) {
-      console.error("No se pudo guardar", e);
-    }
+    guardarRaiz({
+      ...raiz,
+      temporadas: raiz.temporadas.map((t) =>
+        t.id === temporada.id ? { ...t, data: nuevo } : t
+      ),
+    });
   };
 
   const avisar = (msg) => {
@@ -107,7 +156,7 @@ export default function LigaCarpincho() {
         <Capi size={46} />
         <div>
           <h1>Liga Carpincho</h1>
-          <span className="lc-sub">Póker entre amigos · {new Date().getFullYear()}</span>
+          <span className="lc-sub">Póker entre amigos · Temporada {temporada.nombre}</span>
         </div>
       </header>
 
@@ -119,7 +168,15 @@ export default function LigaCarpincho() {
         )}
         {tab === "mesa" && <TabMesa data={data} guardar={guardar} torneo={torneo} avisar={avisar} />}
         {tab === "ranking" && <TabRanking data={data} />}
-        {tab === "ajustes" && <TabAjustes data={data} guardar={guardar} avisar={avisar} />}
+        {tab === "ajustes" && (
+          <TabAjustes
+            data={data}
+            guardar={guardar}
+            avisar={avisar}
+            raiz={raiz}
+            guardarRaiz={guardarRaiz}
+          />
+        )}
       </main>
 
       <nav className="lc-nav">
@@ -900,10 +957,41 @@ function TabRanking({ data }) {
 /* ============================================================
    TAB: AJUSTES
    ============================================================ */
-function TabAjustes({ data, guardar, avisar }) {
+function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz }) {
   const cfg = data.config;
+  const [nuevaTemp, setNuevaTemp] = useState("");
 
   const setCfg = (cambios) => guardar({ ...data, config: { ...cfg, ...cambios } });
+
+  const cambiarTemporada = (id) => {
+    guardarRaiz({ ...raiz, temporadaActualId: id });
+    const t = raiz.temporadas.find((x) => x.id === id);
+    avisar("Temporada " + (t ? t.nombre : "") + " activa");
+  };
+
+  const crearTemporada = () => {
+    const nombre = nuevaTemp.trim() || String(new Date().getFullYear() + 1);
+    if (raiz.temporadas.some((t) => t.nombre === nombre)) {
+      avisar("Ya existe una temporada con ese nombre");
+      return;
+    }
+    const t = {
+      id: uid(),
+      nombre,
+      data: {
+        config: { ...cfg },
+        jugadores: [...data.jugadores],
+        torneos: [],
+      },
+    };
+    guardarRaiz({
+      ...raiz,
+      temporadas: [...raiz.temporadas, t],
+      temporadaActualId: t.id,
+    });
+    setNuevaTemp("");
+    avisar('Temporada "' + nombre + '" creada 🏆');
+  };
 
   const setPunto = (i, v) => {
     const puntos = [...cfg.puntos];
@@ -921,6 +1009,41 @@ function TabAjustes({ data, guardar, avisar }) {
 
   return (
     <div>
+      <h2 className="lc-h2">Temporada</h2>
+      <div className="lc-card lc-form">
+        <label>
+          Temporada actual
+          <select
+            value={raiz.temporadaActualId}
+            onChange={(e) => cambiarTemporada(e.target.value)}
+          >
+            {raiz.temporadas.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre} · {t.data.torneos.filter((x) => x.cerrado).length} torneo
+                {t.data.torneos.filter((x) => x.cerrado).length !== 1 ? "s" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="lc-agregar">
+          <input
+            placeholder={"Nueva temporada (ej: " + (new Date().getFullYear() + 1) + ")"}
+            value={nuevaTemp}
+            onChange={(e) => setNuevaTemp(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && crearTemporada()}
+          />
+          <button className="lc-btn primario" onClick={crearTemporada}>
+            Crear
+          </button>
+        </div>
+        <p className="lc-nota">
+          Cada temporada tiene su propio ranking y sus torneos. Al crear una nueva se
+          mantienen los jugadores y los ajustes, y el ranking arranca de cero. Las
+          anteriores quedan guardadas: podés volver a elegirlas acá para ver sus
+          resultados.
+        </p>
+      </div>
+
       <h2 className="lc-h2">Montos</h2>
       <div className="lc-card lc-form">
         <label>
@@ -984,6 +1107,22 @@ function TabAjustes({ data, guardar, avisar }) {
             <input type="number" value={p} onChange={(e) => setPunto(i, e.target.value)} />
           </label>
         ))}
+      </div>
+
+      <h2 className="lc-h2">Datos</h2>
+      <div className="lc-card lc-form">
+        <label className="lc-switch-row">
+          <span>📱 Local (este dispositivo)</span>
+          <input type="radio" name="fuente" checked readOnly />
+        </label>
+        <label className="lc-switch-row" style={{ opacity: 0.5 }}>
+          <span>☁️ Firebase (compartido entre todos)</span>
+          <input type="radio" name="fuente" disabled />
+        </label>
+        <p className="lc-nota">
+          Con Firebase todos los celulares van a ver los mismos datos en tiempo real.
+          Falta conectar el proyecto — próximamente.
+        </p>
       </div>
 
       <h2 className="lc-h2">Otros</h2>
@@ -1171,6 +1310,8 @@ const css = `
   font-weight:700; color:var(--suave);}
 .lc-form input{border:1px solid var(--linea); border-radius:10px; padding:11px;
   font-size:16px; font-family:inherit; background:var(--papel);}
+.lc-form select{border:1px solid var(--linea); border-radius:10px; padding:11px;
+  font-size:16px; font-family:inherit; background:var(--papel); color:var(--tinta);}
 .lc-puntos-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px;}
 .lc-puntos-grid label{display:flex; flex-direction:column; gap:3px; font-size:12px;
   font-weight:800; color:var(--suave); text-align:center;}
