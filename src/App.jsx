@@ -752,9 +752,9 @@ function TabRanking({ data }) {
         <div className="lc-tr head">
           <span>#</span>
           <span className="izq">Jugador</span>
-          <span>🏆</span>
-          <span>2º</span>
-          <span>3º</span>
+          <span>🥇</span>
+          <span>🥈</span>
+          <span>🥉</span>
           <span>Pts</span>
         </div>
         {filas.map((f, i) => (
