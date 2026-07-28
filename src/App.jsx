@@ -259,6 +259,10 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     actualizarTorneo({ posiciones, historialElim: historial });
   };
 
+  const esUltimoElim = (jid) =>
+    torneo.historialElim.length > 0 &&
+    torneo.historialElim[torneo.historialElim.length - 1] === jid;
+
   const deshacerElim = () => {
     if (torneo.historialElim.length === 0) return;
     const historial = [...torneo.historialElim];
@@ -337,6 +341,11 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
                 {nombreDe(jid)}
                 {excede && <span className="lc-excepcion">excepción</span>}
               </div>
+              {esUltimoElim(jid) && !torneo.cerrado && (
+                <button className="lc-deshacer" onClick={deshacerElim}>
+                  ↩ deshacer
+                </button>
+              )}
               {!eliminado && asignadas === 0 && (
                 <button className="lc-x" onClick={() => quitarJugador(jid)} title="Quitar">
                   ✕
@@ -371,12 +380,6 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
           </div>
         );
       })}
-
-      {torneo.historialElim.length > 0 && !torneo.cerrado && (
-        <button className="lc-btn fantasma" onClick={deshacerElim}>
-          ↩ Deshacer última eliminación
-        </button>
-      )}
 
       {/* pozo y premios */}
       <h2 className="lc-h2">Pozo y premios</h2>
@@ -905,8 +908,12 @@ const css = `
   margin-bottom:8px; color:var(--tinta);}
 
 .lc-agregar{display:flex; gap:8px;}
-.lc-agregar input{flex:1; border:1px solid var(--linea); border-radius:12px;
+.lc-agregar input{flex:1; min-width:0; border:1px solid var(--linea); border-radius:12px;
   padding:11px 12px; font-size:16px; font-family:inherit; background:var(--papel);}
+.lc-agregar .lc-btn{flex-shrink:0; padding:11px 14px;}
+.lc-deshacer{border:none; background:none; color:var(--suave); font-size:12.5px;
+  font-weight:700; cursor:pointer; font-family:inherit; padding:4px 6px;
+  text-decoration:underline dotted; text-underline-offset:3px;}
 
 .lc-jug.out{opacity:.62; background:#F6F1E7;}
 .lc-jug-top{display:flex; justify-content:space-between; align-items:center;}
