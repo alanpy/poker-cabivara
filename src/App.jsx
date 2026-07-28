@@ -248,6 +248,9 @@ export default function LigaCarpincho() {
           <TabTorneo data={data} guardar={guardar} torneo={torneo} avisar={avisar} />
         )}
         {tab === "mesa" && <TabMesa data={data} guardar={guardar} torneo={torneo} avisar={avisar} />}
+        {tab === "timer" && (
+          <TabTimer data={data} guardar={guardar} torneo={torneo} avisar={avisar} />
+        )}
         {tab === "ranking" && <TabRanking data={data} />}
         {tab === "ajustes" && (
           <TabAjustes
@@ -266,6 +269,7 @@ export default function LigaCarpincho() {
         {[
           ["torneo", "♠", "Torneo"],
           ["mesa", "◎", "Mesa"],
+          ["timer", "⏱", "Blinds"],
           ["ranking", "★", "Ranking"],
           ["ajustes", "⚙", "Ajustes"],
         ].map(([k, ic, label]) => (
@@ -958,6 +962,272 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 }
 
 /* ============================================================
+   TAB: TIMER DE BLINDS
+   ============================================================ */
+/* Estructura: sube de 100 en 100 (small) hasta 1000/2000, donde se
+   habilita el add-on; despues sigue con saltos mas grandes. Sin antes. */
+function nivelesBlinds() {
+  const n = [];
+  for (let sb = 100; sb <= 1000; sb += 100) n.push({ sb, bb: sb * 2 });
+  [1500, 2000, 3000, 4000, 5000, 7000, 10000].forEach((sb) =>
+    n.push({ sb, bb: sb * 2 })
+  );
+  return n;
+}
+const NIVELES = nivelesBlinds();
+const ADDON_SB = 1000; // en 1000/2000 se habilita el add-on
+const fmtN = (n) => new Intl.NumberFormat("es-PY").format(n);
+
+/* Sonidos generados con WebAudio (sin archivos). El toque de play
+   desbloquea el audio; despues los beeps suenan solos. */
+let audioCtx = null;
+function desbloquearAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    g.gain.value = 0.0001; // silencioso: solo registra el permiso
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.05);
+  } catch (e) {}
+}
+function beep(freq, ms, vol) {
+  try {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = freq;
+    o.type = "sine";
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + ms / 1000);
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + ms / 1000);
+  } catch (e) {}
+}
+function gongSubida(esAddon) {
+  beep(esAddon ? 523 : 440, 500, 0.3);
+  setTimeout(() => beep(esAddon ? 659 : 554, 500, 0.3), 180);
+  setTimeout(() => beep(esAddon ? 784 : 659, 900, 0.3), 380);
+}
+
+function TabTimer({ data, guardar, torneo, avisar }) {
+  const [, setTic] = useState(0); // re-render periodico para el countdown
+  const wakeRef = useRef(null);
+  const nivelPrevio = useRef(null);
+  const ultimoBeep = useRef(null);
+
+  const timer = (torneo && torneo.timer) || {
+    nivel: 0,
+    durMin: 15,
+    corriendo: false,
+    finTs: null,
+    restanteMs: 15 * 60000,
+  };
+
+  const setTimer = (t) => {
+    guardar({
+      ...data,
+      torneos: data.torneos.map((x) => (x.id === torneo.id ? { ...x, timer: t } : x)),
+    });
+  };
+
+  /* tick local: solo re-renderiza; el estado vive en finTs (timestamp),
+     asi el tiempo es exacto aunque el celu se distraiga un rato */
+  useEffect(() => {
+    const int = setInterval(() => setTic((x) => x + 1), 250);
+    return () => clearInterval(int);
+  }, []);
+
+  /* wake lock: pantalla encendida mientras corre */
+  const pedirWake = async () => {
+    try {
+      if (navigator.wakeLock) wakeRef.current = await navigator.wakeLock.request("screen");
+    } catch (e) {}
+  };
+  const soltarWake = () => {
+    try {
+      if (wakeRef.current) wakeRef.current.release();
+    } catch (e) {}
+    wakeRef.current = null;
+  };
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible" && timer.corriendo) pedirWake();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      soltarWake();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer.corriendo]);
+
+  /* avance de nivel: deterministico (usa el finTs anterior), asi todos
+     los celus calculan lo mismo y las escrituras no chocan */
+  useEffect(() => {
+    if (!torneo || !timer.corriendo || !timer.finTs) return;
+    const ahora = Date.now();
+    if (timer.finTs <= ahora) {
+      let nivel = timer.nivel;
+      let finTs = timer.finTs;
+      while (finTs <= ahora && nivel < NIVELES.length - 1) {
+        nivel += 1;
+        finTs += timer.durMin * 60000;
+      }
+      if (nivel !== timer.nivel) setTimer({ ...timer, nivel, finTs });
+    }
+  });
+
+  /* gong al subir de nivel */
+  useEffect(() => {
+    if (!torneo) return;
+    if (nivelPrevio.current !== null && timer.nivel !== nivelPrevio.current) {
+      const esAddon = NIVELES[timer.nivel].sb === ADDON_SB;
+      gongSubida(esAddon);
+      if (esAddon) avisar("🎁 ¡Add-on habilitado!");
+    }
+    nivelPrevio.current = timer.nivel;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [torneo && timer.nivel]);
+
+  /* beeps en los ultimos 10 segundos */
+  useEffect(() => {
+    if (!torneo || !timer.corriendo || !timer.finTs) return;
+    const seg = Math.ceil((timer.finTs - Date.now()) / 1000);
+    if (seg <= 10 && seg > 0 && ultimoBeep.current !== seg) {
+      ultimoBeep.current = seg;
+      beep(880, 120, 0.18);
+    }
+  });
+
+  if (!torneo)
+    return (
+      <div className="lc-card lc-vacio">
+        <Capi size={56} />
+        <p>Primero empeza un torneo en la pestana ♠ Torneo.</p>
+      </div>
+    );
+
+  const niv = NIVELES[timer.nivel];
+  const prox = NIVELES[timer.nivel + 1] || null;
+  const esAddon = niv.sb === ADDON_SB;
+  const proxAddon = prox && prox.sb === ADDON_SB;
+  const restante =
+    timer.corriendo && timer.finTs
+      ? Math.max(0, timer.finTs - Date.now())
+      : timer.restanteMs;
+  const mm = Math.floor(restante / 60000);
+  const ss = Math.floor((restante % 60000) / 1000);
+
+  const play = () => {
+    desbloquearAudio();
+    pedirWake();
+    const base = timer.restanteMs != null ? timer.restanteMs : timer.durMin * 60000;
+    setTimer({ ...timer, corriendo: true, finTs: Date.now() + base });
+  };
+
+  const pausa = () => {
+    soltarWake();
+    const rest = Math.max(0, (timer.finTs || Date.now()) - Date.now());
+    setTimer({ ...timer, corriendo: false, restanteMs: rest, finTs: null });
+  };
+
+  const saltar = (delta) => {
+    const nuevo = Math.min(NIVELES.length - 1, Math.max(0, timer.nivel + delta));
+    if (nuevo === timer.nivel) return;
+    const dur = timer.durMin * 60000;
+    if (timer.corriendo) setTimer({ ...timer, nivel: nuevo, finTs: Date.now() + dur });
+    else setTimer({ ...timer, nivel: nuevo, restanteMs: dur });
+  };
+
+  const setDur = (min) => {
+    if (timer.corriendo) return;
+    const m = Math.min(60, Math.max(1, min));
+    setTimer({ ...timer, durMin: m, restanteMs: m * 60000 });
+  };
+
+  return (
+    <div>
+      <h2 className="lc-h2">Timer de blinds</h2>
+
+      <div className={"lc-card lc-timer" + (esAddon ? " addon" : "")}>
+        <div className="nivel-tag">
+          Nivel {timer.nivel + 1}
+          {esAddon ? " · 🎁 Add-on habilitado" : ""}
+        </div>
+        <div className="blinds">
+          {fmtN(niv.sb)} / {fmtN(niv.bb)}
+        </div>
+        <div
+          className={
+            "cuenta" + (timer.corriendo && restante <= 60000 ? " alerta" : "")
+          }
+        >
+          {mm}:{String(ss).padStart(2, "0")}
+        </div>
+        <div className="prox">
+          {prox
+            ? "Próximo: " + fmtN(prox.sb) + " / " + fmtN(prox.bb) + (proxAddon ? " · 🎁 add-on" : "")
+            : "Último nivel"}
+        </div>
+        <div className="controles">
+          <button className="paso" onClick={() => saltar(-1)} title="Nivel anterior">
+            ⏮
+          </button>
+          <button className="play" onClick={timer.corriendo ? pausa : play}>
+            {timer.corriendo ? "⏸" : "▶"}
+          </button>
+          <button className="paso" onClick={() => saltar(1)} title="Próximo nivel">
+            ⏭
+          </button>
+        </div>
+      </div>
+
+      <div className="lc-card">
+        <div className="lc-dur">
+          <button onClick={() => setDur(timer.durMin - 1)} disabled={timer.corriendo}>
+            −
+          </button>
+          <span>
+            {timer.durMin} <small>min por nivel</small>
+          </span>
+          <button onClick={() => setDur(timer.durMin + 1)} disabled={timer.corriendo}>
+            +
+          </button>
+        </div>
+        <div className="lc-dur-presets">
+          {[10, 12, 15, 20].map((m) => (
+            <button
+              key={m}
+              className={"lc-chip" + (timer.durMin === m ? " on" : "")}
+              disabled={timer.corriendo}
+              onClick={() => setDur(m)}
+            >
+              {m} min
+            </button>
+          ))}
+        </div>
+        <p className="lc-nota">
+          Pausá para cambiar la duración: vale para el nivel actual (arranca de nuevo) y los
+          siguientes. Las blinds suben de a 100 hasta 1000/2000, donde se habilita el add-on.
+        </p>
+      </div>
+
+      <p className="lc-nota centro">
+        Mientras corre, la pantalla de este celu queda encendida y suena el aviso en los
+        últimos 10 segundos + el gong al subir. Los demás celulares con la app abierta ven el
+        timer sincronizado.
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================
    TAB: RANKING
    ============================================================ */
 function TabRanking({ data }) {
@@ -1534,4 +1804,36 @@ const css = `
   justify-content:space-between; gap:12px !important; font-size:14px !important;
   color:var(--tinta) !important;}
 .lc-switch-row input{width:22px; height:22px; accent-color:var(--naranja); flex-shrink:0;}
+
+/* --- timer de blinds --- */
+.lc-timer{background:radial-gradient(ellipse at 50% 30%, #3A6E56, var(--felt) 75%);
+  color:#fff; text-align:center; padding:22px 14px 18px; border-color:var(--felt-osc);}
+.lc-timer.addon{box-shadow:0 0 0 3px var(--naranja);}
+.lc-timer .nivel-tag{font-size:12px; font-weight:800; letter-spacing:1.5px;
+  text-transform:uppercase; opacity:.85;}
+.lc-timer .blinds{font-size:40px; font-weight:800; letter-spacing:1px; margin:6px 0 2px;
+  font-variant-numeric:tabular-nums;}
+.lc-timer .cuenta{font-size:64px; font-weight:800; line-height:1.05;
+  font-variant-numeric:tabular-nums; letter-spacing:2px;}
+.lc-timer .cuenta.alerta{color:#FFC46B; animation:lcpulso 1s ease-in-out infinite;}
+@keyframes lcpulso{0%,100%{opacity:1;}50%{opacity:.55;}}
+.lc-timer .prox{font-size:13.5px; opacity:.85; margin-top:4px; font-weight:600;}
+.lc-timer .controles{display:flex; justify-content:center; gap:14px; margin-top:14px;}
+.lc-timer .controles button{border:none; cursor:pointer; font-family:inherit;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;}
+.lc-timer .controles .paso{width:52px; height:52px; font-size:20px;
+  background:rgba(255,255,255,.16); color:#fff;}
+.lc-timer .controles .play{width:72px; height:72px; font-size:30px;
+  background:var(--naranja); color:#fff; box-shadow:0 3px 0 #C96D25;}
+.lc-timer .controles .play:active{transform:translateY(2px); box-shadow:none;}
+.lc-dur{display:flex; align-items:center; justify-content:center; gap:8px;}
+.lc-dur button{width:52px; height:52px; border:1px solid var(--linea); border-radius:14px;
+  background:var(--papel); font-size:26px; color:var(--marron); font-weight:800;
+  cursor:pointer; font-family:inherit;}
+.lc-dur button:disabled{opacity:.35;}
+.lc-dur span{min-width:120px; text-align:center; font-size:26px; font-weight:800;}
+.lc-dur small{font-size:13px; color:var(--suave); font-weight:700;}
+.lc-dur-presets{display:flex; justify-content:center; gap:8px; margin-top:12px;}
+.lc-dur-presets .lc-chip:disabled{opacity:.4;}
+@media (prefers-reduced-motion:reduce){.lc-timer .cuenta.alerta{animation:none;}}
 `;
