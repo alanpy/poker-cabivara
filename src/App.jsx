@@ -384,7 +384,17 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
       avisar("Faltan posiciones por definir");
       return;
     }
-    actualizarTorneo({ cerrado: true });
+    actualizarTorneo({
+      cerrado: true,
+      config: {
+        buyIn: cfg.buyIn,
+        addOn: cfg.addOn,
+        maxEntradas: cfg.maxEntradas,
+        premios: [...cfg.premios],
+        casa: cfg.casa,
+        puntos: [...cfg.puntos],
+      },
+    });
     avisar("Torneo cerrado. ¡Puntos sumados al ranking!");
   };
 
@@ -528,7 +538,8 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
 
 function ResumenTorneo({ t, data }) {
   const [abierto, setAbierto] = useState(false);
-  const cfg = data.config;
+  // usa los valores congelados al cerrar el torneo; si es viejo, los actuales
+  const cfg = t.config ? { ...data.config, ...t.config } : data.config;
   const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
 
   const jugadores = Object.keys(t.entradas);
@@ -873,12 +884,13 @@ function TabRanking({ data }) {
 
   const stats = {};
   for (const t of cerrados) {
+    const puntosT = (t.config && t.config.puntos) || cfg.puntos;
     for (const jid of Object.keys(t.posiciones)) {
       const pos = t.posiciones[jid];
       if (!stats[jid])
         stats[jid] = { puntos: 0, torneos: 0, pos: Array(nPos).fill(0) };
       stats[jid].torneos += 1;
-      stats[jid].puntos += cfg.puntos[pos - 1] || 0;
+      stats[jid].puntos += puntosT[pos - 1] || 0;
       if (pos >= 1 && pos <= nPos) stats[jid].pos[pos - 1] += 1;
     }
   }
@@ -1108,6 +1120,12 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz }) {
           </label>
         ))}
       </div>
+
+      <p className="lc-nota">
+        Al cerrar un torneo, sus montos, premios y puntos quedan guardados con él. Cambiar
+        estos valores acá vale para el torneo en juego y los próximos, sin alterar el
+        historial ni el ranking de los ya cerrados.
+      </p>
 
       <h2 className="lc-h2">Datos</h2>
       <div className="lc-card lc-form">
