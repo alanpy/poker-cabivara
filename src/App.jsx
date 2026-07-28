@@ -114,9 +114,9 @@ export default function LigaCarpincho() {
   const [aviso, setAviso] = useState(null);
   const [fuente, setFuente] = useState(() => {
     try {
-      return localStorage.getItem(FUENTE_KEY) || "local";
+      return localStorage.getItem(FUENTE_KEY) || "firebase";
     } catch (e) {
-      return "local";
+      return "firebase";
     }
   });
   const nubeRef = useRef(null); // {ref, setDoc} cuando hay conexion
@@ -145,34 +145,31 @@ export default function LigaCarpincho() {
               const n = normalizarRaiz(snap.data());
               if (n) setRaiz(n);
             } else {
-              // nube vacia: se inicializa con los datos de este dispositivo
+              // nube vacia: usar lo de este celu y subirlo solo si tiene algo cargado
               const local = cargarRaiz();
-              setDoc(ref, local).catch((e) => console.error(e));
+              const tieneAlgo = local.temporadas.some(
+                (t) => t.data.jugadores.length > 0 || t.data.torneos.length > 0
+              );
               setRaiz(local);
-              setAviso("Datos de este celu enviados a la nube ☁️");
-              setTimeout(() => setAviso(null), 3000);
+              if (tieneAlgo) {
+                setDoc(ref, local).catch((e) => console.error(e));
+                setAviso("Datos de este celu enviados a la nube ☁️");
+                setTimeout(() => setAviso(null), 3000);
+              }
             }
           },
           (err) => {
             console.error(err);
             if (cancelado) return;
-            setAviso("No se pudo conectar a la nube. Volviendo a datos locales.");
+            setAviso("Sin conexión a la nube: usando datos locales por ahora.");
             setTimeout(() => setAviso(null), 4000);
-            try {
-              localStorage.setItem(FUENTE_KEY, "local");
-            } catch (e2) {}
-            setFuente("local");
+            setFuente("local"); // solo esta sesion; al recargar intenta la nube de nuevo
           }
         );
       })
       .catch((e) => {
         console.error(e);
-        if (!cancelado) {
-          try {
-            localStorage.setItem(FUENTE_KEY, "local");
-          } catch (e2) {}
-          setFuente("local");
-        }
+        if (!cancelado) setFuente("local"); // solo esta sesion
       });
 
     return () => {
@@ -1253,10 +1250,9 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
           />
         </label>
         <p className="lc-nota">
-          Con la nube activada, todos los celulares que abran la app ven y editan los mismos
-          datos en tiempo real. La primera vez que alguien la activa, si la nube está vacía
-          se suben los datos de ese dispositivo. El modo local queda intacto en cada celu
-          como espacio de prueba.
+          La nube es el modo por defecto: cualquiera que abra el link ve y edita los mismos
+          datos en tiempo real. El modo local es el espacio de prueba de cada celu — ideal
+          para probar cosas sin tocar los datos del grupo.
         </p>
       </div>
 
