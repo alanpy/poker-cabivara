@@ -444,6 +444,7 @@ function ResumenTorneo({ t, data }) {
 function TabMesa({ data, guardar, torneo, avisar }) {
   const [asignando, setAsignando] = useState(null); // nro de asiento libre elegido
   const [anim, setAnim] = useState(null); // {asientos, orden, revelados, nAsientos}
+  const [cantTxt, setCantTxt] = useState(""); // texto libre del campo Asientos
   const audioRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -456,6 +457,13 @@ function TabMesa({ data, guardar, torneo, avisar }) {
       clearTimeout(timerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (torneo)
+      setCantTxt(
+        String(torneo.cantAsientos || Object.keys(torneo.entradas).length || "")
+      );
+  }, [torneo && torneo.id]);
 
   if (!torneo)
     return (
@@ -477,6 +485,13 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 
   const cant = torneo.cantAsientos || jugadoresT.length;
 
+  const clampAsientos = (v) => {
+    const min = Math.max(jugadoresT.length, 2);
+    if (isNaN(v)) return Math.max(cant || 0, min);
+    return Math.min(12, Math.max(min, v));
+  };
+  const cantElegida = clampAsientos(parseInt(cantTxt, 10));
+
   const finalizarSorteo = (asientos, nAsientos, cortarAudio) => {
     clearTimeout(timerRef.current);
     if (cortarAudio && audioRef.current) audioRef.current.pause();
@@ -492,6 +507,7 @@ function TabMesa({ data, guardar, torneo, avisar }) {
       return;
     }
     const nAsientos = Math.max(n, jugadoresT.length);
+    setCantTxt(String(nAsientos));
     // baraja de asientos 1..N (como separar las cartas y embarajar)
     const baraja = Array.from({ length: nAsientos }, (_, i) => i + 1);
     for (let i = baraja.length - 1; i > 0; i--) {
@@ -578,21 +594,25 @@ function TabMesa({ data, guardar, torneo, avisar }) {
             Asientos
             <input
               type="number"
+              inputMode="numeric"
               min={jugadoresT.length || 2}
               max={12}
-              value={cant}
+              value={cantTxt}
               disabled={!!anim}
-              onChange={(e) =>
-                actualizarTorneo({ cantAsientos: parseInt(e.target.value) || cant })
-              }
+              onChange={(e) => setCantTxt(e.target.value)}
+              onBlur={() => {
+                const v = clampAsientos(parseInt(cantTxt, 10));
+                setCantTxt(String(v));
+                actualizarTorneo({ cantAsientos: v });
+              }}
             />
           </label>
-          <button className="lc-btn primario" disabled={!!anim} onClick={() => sortear(cant)}>
+          <button className="lc-btn primario" disabled={!!anim} onClick={() => sortear(cantElegida)}>
             {anim ? "Sorteando…" : "🂠 Sortear posiciones"}
           </button>
         </div>
         <p className="lc-nota">
-          Se "embarajan" {cant} cartas y cada jugador recibe su asiento al azar. Los asientos
+          Se "embarajan" {cantElegida} cartas y cada jugador recibe su asiento al azar. Los asientos
           libres quedan en espera: cuando llegue alguien, toca un asiento libre y elegilo.
         </p>
       </div>
