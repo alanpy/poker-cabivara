@@ -1055,6 +1055,44 @@ function TabRanking({ data }) {
 /* ============================================================
    TAB: AJUSTES
    ============================================================ */
+
+/* Campo numerico que se puede borrar libremente:
+   aplica el valor en vivo cuando es valido y, al salir del campo,
+   restaura el ultimo valido si quedo vacio. */
+function CampoNum({ value, onCommit, min = 0, step }) {
+  const [txt, setTxt] = useState(String(value));
+  const enfocado = useRef(false);
+
+  useEffect(() => {
+    if (!enfocado.current) setTxt(String(value));
+  }, [value]);
+
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      step={step}
+      min={min}
+      value={txt}
+      onFocus={() => {
+        enfocado.current = true;
+      }}
+      onChange={(e) => {
+        setTxt(e.target.value);
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= min) onCommit(v);
+      }}
+      onBlur={() => {
+        enfocado.current = false;
+        const v = parseInt(txt, 10);
+        const fin = isNaN(v) ? value : Math.max(min, v);
+        onCommit(fin);
+        setTxt(String(fin));
+      }}
+    />
+  );
+}
+
 function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarFuente }) {
   const cfg = data.config;
   const [nuevaTemp, setNuevaTemp] = useState("");
@@ -1093,13 +1131,13 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
 
   const setPunto = (i, v) => {
     const puntos = [...cfg.puntos];
-    puntos[i] = parseInt(v) || 0;
+    puntos[i] = v;
     setCfg({ puntos });
   };
 
   const setPremio = (i, v) => {
     const premios = [...cfg.premios];
-    premios[i] = parseInt(v) || 0;
+    premios[i] = v;
     setCfg({ premios });
   };
 
@@ -1146,30 +1184,15 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
       <div className="lc-card lc-form">
         <label>
           Buy-in / entrada (Gs)
-          <input
-            type="number"
-            step="1000"
-            value={cfg.buyIn}
-            onChange={(e) => setCfg({ buyIn: parseInt(e.target.value) || 0 })}
-          />
+          <CampoNum step={1000} value={cfg.buyIn} onCommit={(v) => setCfg({ buyIn: v })} />
         </label>
         <label>
           Add-on (Gs)
-          <input
-            type="number"
-            step="1000"
-            value={cfg.addOn}
-            onChange={(e) => setCfg({ addOn: parseInt(e.target.value) || 0 })}
-          />
+          <CampoNum step={1000} value={cfg.addOn} onCommit={(v) => setCfg({ addOn: v })} />
         </label>
         <label>
           Máx. entradas acordadas
-          <input
-            type="number"
-            min="1"
-            value={cfg.maxEntradas}
-            onChange={(e) => setCfg({ maxEntradas: parseInt(e.target.value) || 1 })}
-          />
+          <CampoNum min={1} value={cfg.maxEntradas} onCommit={(v) => setCfg({ maxEntradas: v })} />
         </label>
         <p className="lc-nota">
           Superar el máximo está permitido: se marca como "excepción", igual que en la mesa.
@@ -1181,16 +1204,12 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
         {cfg.premios.map((p, i) => (
           <label key={i}>
             {i + 1}º puesto (%)
-            <input type="number" value={p} onChange={(e) => setPremio(i, e.target.value)} />
+            <CampoNum value={p} onCommit={(v) => setPremio(i, v)} />
           </label>
         ))}
         <label>
           Casa / caja común (%)
-          <input
-            type="number"
-            value={cfg.casa}
-            onChange={(e) => setCfg({ casa: parseInt(e.target.value) || 0 })}
-          />
+          <CampoNum value={cfg.casa} onCommit={(v) => setCfg({ casa: v })} />
         </label>
         {sumaPct !== 100 && (
           <p className="lc-alerta">La suma da {sumaPct}% — revisá que llegue a 100%.</p>
@@ -1202,7 +1221,7 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
         {cfg.puntos.map((p, i) => (
           <label key={i}>
             {i + 1}º
-            <input type="number" value={p} onChange={(e) => setPunto(i, e.target.value)} />
+            <CampoNum value={p} onCommit={(v) => setPunto(i, v)} />
           </label>
         ))}
       </div>
