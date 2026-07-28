@@ -210,6 +210,31 @@ export default function LigaCarpincho() {
     });
   };
 
+  /* Al cargar, abrir la pestana correcta segun el momento del juego:
+     sin torneo -> Torneo (para empezar)
+     torneo sin mesa sorteada -> Mesa
+     mesa sorteada y timer ya usado -> Blinds
+     mesa sorteada, timer intacto -> Torneo (para anotar entradas) */
+  const tabInicialLista = useRef(false);
+  useEffect(() => {
+    if (!data || tabInicialLista.current) return;
+    tabInicialLista.current = true;
+    const t = data.torneos.find((x) => !x.cerrado);
+    if (!t) return; // sin torneo: queda en Torneo (default)
+    const sorteado = Object.keys(t.asientos || {}).length > 0;
+    if (!sorteado) {
+      setTab("mesa");
+      return;
+    }
+    const tm = t.timer;
+    const timerUsado =
+      tm &&
+      (tm.corriendo ||
+        tm.nivel > 0 ||
+        (tm.restanteMs != null && tm.restanteMs !== tm.durMin * 60000));
+    if (timerUsado) setTab("timer");
+  }, [data]);
+
   const avisar = (msg) => {
     setAviso(msg);
     setTimeout(() => setAviso(null), 2600);
