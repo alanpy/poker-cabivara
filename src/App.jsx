@@ -708,18 +708,17 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 function TabRanking({ data }) {
   const cfg = data.config;
   const cerrados = data.torneos.filter((t) => t.cerrado);
+  const nPos = cfg.puntos.length;
 
   const stats = {};
   for (const t of cerrados) {
     for (const jid of Object.keys(t.posiciones)) {
       const pos = t.posiciones[jid];
       if (!stats[jid])
-        stats[jid] = { puntos: 0, torneos: 0, p1: 0, p2: 0, p3: 0 };
+        stats[jid] = { puntos: 0, torneos: 0, pos: Array(nPos).fill(0) };
       stats[jid].torneos += 1;
       stats[jid].puntos += cfg.puntos[pos - 1] || 0;
-      if (pos === 1) stats[jid].p1 += 1;
-      if (pos === 2) stats[jid].p2 += 1;
-      if (pos === 3) stats[jid].p3 += 1;
+      if (pos >= 1 && pos <= nPos) stats[jid].pos[pos - 1] += 1;
     }
   }
 
@@ -729,7 +728,10 @@ function TabRanking({ data }) {
       nombre: data.jugadores.find((j) => j.id === jid)?.nombre || "?",
       ...stats[jid],
     }))
-    .sort((a, b) => b.puntos - a.puntos || b.p1 - a.p1 || a.nombre.localeCompare(b.nombre));
+    .sort(
+      (a, b) =>
+        b.puntos - a.puntos || b.pos[0] - a.pos[0] || a.nombre.localeCompare(b.nombre)
+    );
 
   if (filas.length === 0)
     return (
@@ -742,40 +744,50 @@ function TabRanking({ data }) {
       </div>
     );
 
+  const cabecera = (i) =>
+    i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}º`;
+
   return (
     <div>
       <h2 className="lc-h2">Ranking de la liga</h2>
       <p className="lc-nota">
         Puntos por posición: {cfg.puntos.map((p, i) => `${i + 1}º=${p}`).join(" · ")}
       </p>
-      <div className="lc-card lc-tabla">
-        <div className="lc-tr head">
-          <span>#</span>
-          <span className="izq">Jugador</span>
-          <span>🥇</span>
-          <span>🥈</span>
-          <span>🥉</span>
-          <span>Pts</span>
-        </div>
-        {filas.map((f, i) => (
-          <div key={f.jid} className={"lc-tr" + (i === 0 ? " lider" : "")}>
-            <span>{i + 1}</span>
-            <span className="izq">
-              {i === 0 && "🏆 "}
-              {i === 1 && "🥈 "}
-              {i === 2 && "🥉 "}
-              {f.nombre}
-            </span>
-            <span>{f.p1 || "·"}</span>
-            <span>{f.p2 || "·"}</span>
-            <span>{f.p3 || "·"}</span>
-            <span className="pts">{f.puntos}</span>
+      <div className="lc-card lc-tabla2">
+        <div className="lc-tabla-scroll">
+          <div className="lc-t2">
+            <div className="lc-t2-fila head">
+              <span className="fijo-izq">Jugador</span>
+              {Array.from({ length: nPos }, (_, i) => (
+                <span key={i} className="celda">
+                  {cabecera(i)}
+                </span>
+              ))}
+              <span className="fijo-der">Pts</span>
+            </div>
+            {filas.map((f, i) => (
+              <div key={f.jid} className={"lc-t2-fila" + (i === 0 ? " lider" : "")}>
+                <span className="fijo-izq">
+                  {i === 0 && "🏆 "}
+                  {i === 1 && "🥈 "}
+                  {i === 2 && "🥉 "}
+                  {i + 1}. {f.nombre}
+                </span>
+                {f.pos.map((c, j) => (
+                  <span key={j} className="celda">
+                    {c || "·"}
+                  </span>
+                ))}
+                <span className="fijo-der">{f.puntos}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
       <p className="lc-nota centro">
-        {cerrados.length} torneo{cerrados.length !== 1 ? "s" : ""} jugado
-        {cerrados.length !== 1 ? "s" : ""} · el 1º del año se lleva el trofeo carpincho
+        Deslizá la tabla para ver todas las posiciones · {cerrados.length} torneo
+        {cerrados.length !== 1 ? "s" : ""} jugado{cerrados.length !== 1 ? "s" : ""} · el 1º del
+        año se lleva el trofeo carpincho
       </p>
     </div>
   );
@@ -1074,4 +1086,28 @@ const css = `
   color:#fff; font-size:11px; font-weight:800; white-space:nowrap;}
 @media (prefers-reduced-motion:reduce){
   .lc-dorso,.lc-cartita,.lc-asiento.recien{animation:none;}}
+
+/* --- ranking con scroll horizontal y columnas fijas --- */
+.lc-tabla2{padding:0; overflow:hidden;}
+.lc-tabla-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+.lc-t2{min-width:max-content;}
+.lc-t2-fila{display:flex; align-items:stretch; border-bottom:1px solid var(--linea);}
+.lc-t2-fila:last-child{border-bottom:none;}
+.lc-t2-fila .fijo-izq{position:sticky; left:0; z-index:1; background:var(--carta);
+  min-width:138px; max-width:138px; padding:11px 8px 11px 12px; font-weight:700;
+  font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:3px 0 5px rgba(43,36,28,.07); display:flex; align-items:center;}
+.lc-t2-fila .celda{min-width:42px; display:flex; align-items:center; justify-content:center;
+  font-size:14px; padding:11px 0; color:var(--tinta);}
+.lc-t2-fila .fijo-der{position:sticky; right:0; z-index:1; background:var(--carta);
+  min-width:54px; padding:11px 10px; font-weight:800; color:var(--felt); font-size:15px;
+  box-shadow:-3px 0 5px rgba(43,36,28,.07); display:flex; align-items:center;
+  justify-content:center;}
+.lc-t2-fila.head{font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--suave); border-bottom:2px solid var(--linea);}
+.lc-t2-fila.head .fijo-izq{font-weight:800; font-size:11px; color:var(--suave);}
+.lc-t2-fila.head .celda{font-size:13px; font-weight:800; color:var(--suave);}
+.lc-t2-fila.head .fijo-der{font-size:11px; font-weight:800; color:var(--suave);}
+.lc-t2-fila.lider{background:#FDF3E4;}
+.lc-t2-fila.lider .fijo-izq,.lc-t2-fila.lider .fijo-der{background:#FDF3E4;}
 `;
