@@ -761,7 +761,9 @@ function TabRanking({ data }) {
           <div key={f.jid} className={"lc-tr" + (i === 0 ? " lider" : "")}>
             <span>{i + 1}</span>
             <span className="izq">
-              {i === 0 && "🧡 "}
+              {i === 0 && "🏆 "}
+              {i === 1 && "🥈 "}
+              {i === 2 && "🥉 "}
               {f.nombre}
             </span>
             <span>{f.p1 || "·"}</span>
