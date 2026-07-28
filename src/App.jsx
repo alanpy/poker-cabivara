@@ -236,7 +236,7 @@ export default function LigaCarpincho() {
           <h1>Liga Carpincho</h1>
           <span className="lc-sub">
             Póker entre amigos · Temporada {temporada.nombre}
-            {fuente === "firebase" ? " · ☁️" : ""}
+            {fuente === "firebase" ? " · ☁️" : " · 📱 local"}
           </span>
         </div>
       </header>
