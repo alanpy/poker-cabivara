@@ -18,6 +18,7 @@ const CONFIG_DEFAULT = {
   casa: 10, // % para la caja
   puntos: [20, 15, 12, 10, 8, 6, 5, 4, 3, 2], // puntos por posición 1..10
   ads: true, // mostrar "publicidad" antes de empezar un torneo
+  addonBB: 2000, // el add-on se habilita al llegar a este big blind
 };
 
 const ADS_VIDEOS = ["xh_7D0Nrq24", "w6qAtapjGFA", "P0P8EWoff4w"];
@@ -472,8 +473,12 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     // si queda uno solo sin posición → campeón
     const restantes = jugadoresT.filter((id) => !posiciones[id]);
     if (restantes.length === 1) {
+      // resolucion: hay campeon
       posiciones[restantes[0]] = 1;
       historial.push(restantes[0]);
+      sonar("ultimo_eliminado_mesa.mp3");
+    } else {
+      sonar("eliminado_mesa.mp3");
     }
     actualizarTorneo({ posiciones, historialElim: historial });
   };
@@ -1000,44 +1005,46 @@ function nivelesBlinds() {
   return n;
 }
 const NIVELES = nivelesBlinds();
-const ADDON_SB = 1000; // en 1000/2000 se habilita el add-on
 const fmtN = (n) => new Intl.NumberFormat("es-PY").format(n);
 
-/* Sonidos generados con WebAudio (sin archivos). El toque de play
-   desbloquea el audio; despues los beeps suenan solos. */
-let audioCtx = null;
-function desbloquearAudio() {
+/* Sonidos de la liga (archivos propios en /public). El primer toque
+   los "prepara" (politica de autoplay) y despues suenan solos. */
+const audiosCache = {};
+function getAudio(nombre) {
+  if (!audiosCache[nombre]) {
+    const a = new Audio(import.meta.env.BASE_URL + nombre);
+    a.preload = "auto";
+    audiosCache[nombre] = a;
+  }
+  return audiosCache[nombre];
+}
+function sonar(nombre) {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    g.gain.value = 0.0001; // silencioso: solo registra el permiso
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + 0.05);
+    const a = getAudio(nombre);
+    a.currentTime = 0;
+    const pr = a.play();
+    if (pr && pr.catch) pr.catch(() => {});
   } catch (e) {}
 }
-function beep(freq, ms, vol) {
-  try {
-    if (!audioCtx) return;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.frequency.value = freq;
-    o.type = "sine";
-    g.gain.setValueAtTime(vol, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + ms / 1000);
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + ms / 1000);
-  } catch (e) {}
-}
-function gongSubida(esAddon) {
-  beep(esAddon ? 523 : 440, 500, 0.3);
-  setTimeout(() => beep(esAddon ? 659 : 554, 500, 0.3), 180);
-  setTimeout(() => beep(esAddon ? 784 : 659, 900, 0.3), 380);
+/* desbloquea cada audio con el gesto del usuario (necesario en iPhone):
+   play silencioso + pausa, y queda habilitado para sonar solo despues */
+function prepararAudios(lista) {
+  lista.forEach((nombre) => {
+    try {
+      const a = getAudio(nombre);
+      if (!a.paused) return; // ya esta sonando, no tocar
+      a.muted = true;
+      const pr = a.play();
+      if (pr && pr.then)
+        pr.then(() => {
+          a.pause();
+          a.currentTime = 0;
+          a.muted = false;
+        }).catch(() => {
+          a.muted = false;
+        });
+    } catch (e) {}
+  });
 }
 
 function TabTimer({ data, guardar, torneo, avisar }) {
@@ -1053,6 +1060,13 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     finTs: null,
     restanteMs: 15 * 60000,
   };
+
+  const addonBB = data.config.addonBB || 2000;
+  const esAddonNivel = (i) =>
+    i >= 0 &&
+    i < NIVELES.length &&
+    NIVELES[i].bb >= addonBB &&
+    (i === 0 || NIVELES[i - 1].bb < addonBB);
 
   const setTimer = (t) => {
     guardar({
@@ -1108,25 +1122,37 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     }
   });
 
-  /* gong al subir de nivel */
+  /* al subir de nivel: el aviso sonoro ya arranco 5s antes (sube_blind).
+     Si el nivel nuevo es el del add-on, add_on.mp3 suena cuando termina. */
   useEffect(() => {
     if (!torneo) return;
     if (nivelPrevio.current !== null && timer.nivel !== nivelPrevio.current) {
-      const esAddon = NIVELES[timer.nivel].sb === ADDON_SB;
-      gongSubida(esAddon);
-      if (esAddon) avisar("🎁 ¡Add-on habilitado!");
+      if (esAddonNivel(timer.nivel)) {
+        avisar("🎁 ¡Add-on habilitado!");
+        const sb = getAudio("sube_blind.mp3");
+        if (sb && !sb.paused && !sb.ended) {
+          const alTerminar = () => {
+            sb.removeEventListener("ended", alTerminar);
+            sonar("add_on.mp3");
+          };
+          sb.addEventListener("ended", alTerminar);
+        } else {
+          sonar("add_on.mp3");
+        }
+      }
     }
     nivelPrevio.current = timer.nivel;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [torneo && timer.nivel]);
 
-  /* beeps en los ultimos 10 segundos */
+  /* aviso de subida: sube_blind.mp3 arranca 5s antes del cambio
+     (el audio trae su propio countdown de 5 segundos) */
   useEffect(() => {
     if (!torneo || !timer.corriendo || !timer.finTs) return;
-    const seg = Math.ceil((timer.finTs - Date.now()) / 1000);
-    if (seg <= 10 && seg > 0 && ultimoBeep.current !== seg) {
-      ultimoBeep.current = seg;
-      beep(880, 120, 0.18);
+    const falta = timer.finTs - Date.now();
+    if (falta <= 5000 && falta > 0 && ultimoBeep.current !== timer.finTs) {
+      ultimoBeep.current = timer.finTs; // una vez por nivel
+      sonar("sube_blind.mp3");
     }
   });
 
@@ -1140,8 +1166,8 @@ function TabTimer({ data, guardar, torneo, avisar }) {
 
   const niv = NIVELES[timer.nivel];
   const prox = NIVELES[timer.nivel + 1] || null;
-  const esAddon = niv.sb === ADDON_SB;
-  const proxAddon = prox && prox.sb === ADDON_SB;
+  const esAddon = esAddonNivel(timer.nivel);
+  const proxAddon = prox && esAddonNivel(timer.nivel + 1);
   const restante =
     timer.corriendo && timer.finTs
       ? Math.max(0, timer.finTs - Date.now())
@@ -1150,13 +1176,15 @@ function TabTimer({ data, guardar, torneo, avisar }) {
   const ss = Math.floor((restante % 60000) / 1000);
 
   const play = () => {
-    desbloquearAudio();
+    sonar("resume_timer.mp3");
+    prepararAudios(["sube_blind.mp3", "add_on.mp3", "pause_timer.mp3"]);
     pedirWake();
     const base = timer.restanteMs != null ? timer.restanteMs : timer.durMin * 60000;
     setTimer({ ...timer, corriendo: true, finTs: Date.now() + base });
   };
 
   const pausa = () => {
+    sonar("pause_timer.mp3");
     soltarWake();
     const rest = Math.max(0, (timer.finTs || Date.now()) - Date.now());
     setTimer({ ...timer, corriendo: false, restanteMs: rest, finTs: null });
@@ -1239,7 +1267,8 @@ function TabTimer({ data, guardar, torneo, avisar }) {
         </div>
         <p className="lc-nota">
           Pausá para cambiar la duración: vale para el nivel actual (arranca de nuevo) y los
-          siguientes. Las blinds suben de a 100 hasta 1000/2000, donde se habilita el add-on.
+          siguientes. El add-on se habilita al llegar al big blind de {fmtN(addonBB)}
+          (configurable en Ajustes).
         </p>
       </div>
 
@@ -1485,6 +1514,10 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
         <label>
           Máx. entradas acordadas
           <CampoNum min={1} value={cfg.maxEntradas} onCommit={(v) => setCfg({ maxEntradas: v })} />
+        </label>
+        <label>
+          Add-on: se habilita al llegar al big blind de (Gs)
+          <CampoNum step={100} value={cfg.addonBB || 2000} onCommit={(v) => setCfg({ addonBB: v })} />
         </label>
         <p className="lc-nota">
           Superar el máximo está permitido: se marca como "excepción", igual que en la mesa.
