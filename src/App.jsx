@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { conectarFirebase } from "./firebase";
+import { SEED } from "./seed";
 
 /* ============================================================
    LIGA CARPINCHO — App de torneos de póker entre amigos
@@ -16,7 +17,7 @@ const CONFIG_DEFAULT = {
   maxEntradas: 3,
   premios: [50, 30, 10], // 1º, 2º, 3º (%)
   casa: 10, // % para la caja
-  puntos: [20, 15, 12, 10, 8, 6, 5, 4, 3, 2], // puntos por posición 1..10
+  puntos: [25, 18, 15, 12, 10, 8, 6, 4, 2, 1], // puntos oficiales de la liga (1º a 10º)
   ads: true, // mostrar "publicidad" antes de empezar un torneo
   addonBB: 2000, // el add-on se habilita al llegar a este big blind
   blindInicial: 100, // small blind inicial
@@ -1722,6 +1723,22 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
           datos en tiempo real. El modo local es el espacio de prueba de cada celu — ideal
           para probar cosas sin tocar los datos del grupo.
         </p>
+        <button
+          className="lc-btn fantasma"
+          onClick={() => {
+            const ok = window.confirm(
+              "Esto REEMPLAZA todos los datos actuales (" +
+                (fuente === "firebase" ? "de la nube, para todos" : "locales de este celu") +
+                ") por el historial oficial 2024–2026 de la planilla (67 torneos). ¿Continuar?"
+            );
+            if (ok) {
+              guardarRaiz(JSON.parse(JSON.stringify(SEED)));
+              avisar("Historial 2024–2026 cargado 🏆");
+            }
+          }}
+        >
+          📥 Cargar historial 2024–2026 de la planilla
+        </button>
       </div>
 
       <h2 className="lc-h2">Otros</h2>
