@@ -19,6 +19,12 @@ const CONFIG_DEFAULT = {
   puntos: [20, 15, 12, 10, 8, 6, 5, 4, 3, 2], // puntos por posición 1..10
   ads: true, // mostrar "publicidad" antes de empezar un torneo
   addonBB: 2000, // el add-on se habilita al llegar a este big blind
+  blindInicial: 100, // small blind inicial
+  blindPasoBase: 100, // cuanto sube la small por nivel (base)
+  blindTiers: [
+    { desdeBB: 1000, paso: 200 },
+    { desdeBB: 2000, paso: 500 },
+  ], // escalones: cuando el big supera desdeBB, sube de a "paso"
 };
 
 const ADS_VIDEOS = ["xh_7D0Nrq24", "w6qAtapjGFA", "P0P8EWoff4w"];
@@ -994,17 +1000,6 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 /* ============================================================
    TAB: TIMER DE BLINDS
    ============================================================ */
-/* Estructura: sube de 100 en 100 (small) hasta 1000/2000, donde se
-   habilita el add-on; despues sigue con saltos mas grandes. Sin antes. */
-function nivelesBlinds() {
-  const n = [];
-  for (let sb = 100; sb <= 1000; sb += 100) n.push({ sb, bb: sb * 2 });
-  [1500, 2000, 3000, 4000, 5000, 7000, 10000].forEach((sb) =>
-    n.push({ sb, bb: sb * 2 })
-  );
-  return n;
-}
-const NIVELES = nivelesBlinds();
 const fmtN = (n) => new Intl.NumberFormat("es-PY").format(n);
 
 /* Sonidos de la liga (archivos propios en /public). El primer toque
@@ -1050,23 +1045,53 @@ function prepararAudios(lista) {
 function TabTimer({ data, guardar, torneo, avisar }) {
   const [, setTic] = useState(0); // re-render periodico para el countdown
   const wakeRef = useRef(null);
-  const nivelPrevio = useRef(null);
-  const ultimoBeep = useRef(null);
+  const sbPrevio = useRef(null);
+  const ultimoAviso = useRef(null);
 
-  const timer = (torneo && torneo.timer) || {
-    nivel: 0,
+  const cfg = data.config;
+  const inicial = cfg.blindInicial || 100;
+  const pasoBase = cfg.blindPasoBase || 100;
+  const tiers = [...(cfg.blindTiers || [])].sort((a, b) => a.desdeBB - b.desdeBB);
+  const addonBB = cfg.addonBB || 2000;
+
+  let timer = (torneo && torneo.timer) || {
+    sb: inicial,
     durMin: 15,
+    paso: null, // ajuste manual del paso (null = usar la escalera de config)
     corriendo: false,
     finTs: null,
     restanteMs: 15 * 60000,
   };
+  // migracion desde la version vieja (guardaba indice de nivel fijo)
+  if (timer.sb == null) {
+    const tabla = [];
+    for (let x = 100; x <= 1000; x += 100) tabla.push(x);
+    [1500, 2000, 3000, 4000, 5000, 7000, 10000].forEach((x) => tabla.push(x));
+    timer = { ...timer, sb: tabla[Math.min(timer.nivel || 0, tabla.length - 1)] };
+  }
 
-  const addonBB = data.config.addonBB || 2000;
-  const esAddonNivel = (i) =>
-    i >= 0 &&
-    i < NIVELES.length &&
-    NIVELES[i].bb >= addonBB &&
-    (i === 0 || NIVELES[i - 1].bb < addonBB);
+  /* --- escalera dinamica --- */
+  const pasoConfig = (bb) => {
+    let p = pasoBase;
+    for (const t of tiers) if (bb > t.desdeBB) p = t.paso;
+    return p;
+  };
+  // "la mayor vence": entre la escalera de config y el ajuste manual del reloj
+  const pasoEfectivo = (bb) => Math.max(pasoConfig(bb), timer.paso || 0);
+  const siguienteSb = (sb) => sb + pasoEfectivo(sb * 2);
+
+  const secuencia = () => {
+    // reconstruye la escalera desde el inicio hasta la sb actual
+    const lista = [inicial];
+    let sb = inicial;
+    let guarda = 0;
+    while (sb < timer.sb && guarda < 300) {
+      sb = siguienteSb(sb);
+      lista.push(sb);
+      guarda += 1;
+    }
+    return lista;
+  };
 
   const setTimer = (t) => {
     guardar({
@@ -1075,8 +1100,7 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     });
   };
 
-  /* tick local: solo re-renderiza; el estado vive en finTs (timestamp),
-     asi el tiempo es exacto aunque el celu se distraiga un rato */
+  /* tick local: solo re-renderiza; el estado vive en finTs (timestamp) */
   useEffect(() => {
     const int = setInterval(() => setTic((x) => x + 1), 250);
     return () => clearInterval(int);
@@ -1106,70 +1130,75 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.corriendo]);
 
-  /* avance de nivel: deterministico (usa el finTs anterior), asi todos
-     los celus calculan lo mismo y las escrituras no chocan */
+  /* avance de nivel (deterministico via finTs); en el nivel del add-on
+     el timer se pausa solo, sin sonido de pausa */
   useEffect(() => {
     if (!torneo || !timer.corriendo || !timer.finTs) return;
     const ahora = Date.now();
     if (timer.finTs <= ahora) {
-      let nivel = timer.nivel;
+      let sb = timer.sb;
       let finTs = timer.finTs;
       let pausaAddon = false;
-      while (finTs <= ahora && nivel < NIVELES.length - 1) {
-        nivel += 1;
+      let guarda = 0;
+      while (finTs <= ahora && guarda < 50) {
+        const bbActual = sb * 2;
+        const sbNext = siguienteSb(sb);
+        const cruzaAddon = bbActual < addonBB && sbNext * 2 >= addonBB;
+        sb = sbNext;
         finTs += timer.durMin * 60000;
-        if (esAddonNivel(nivel)) {
-          // pausa automatica para hacer los add-ons (sin sonido de pausa:
-          // ya va a sonar el audio de add-on)
+        guarda += 1;
+        if (cruzaAddon) {
           pausaAddon = true;
           break;
         }
       }
-      if (nivel !== timer.nivel) {
+      if (sb !== timer.sb) {
         if (pausaAddon) {
           setTimer({
             ...timer,
-            nivel,
+            sb,
             corriendo: false,
             finTs: null,
             restanteMs: timer.durMin * 60000,
           });
         } else {
-          setTimer({ ...timer, nivel, finTs });
+          setTimer({ ...timer, sb, finTs });
         }
       }
     }
   });
 
-  /* al subir de nivel: el aviso sonoro ya arranco 5s antes (sube_blind).
-     Si el nivel nuevo es el del add-on, add_on.mp3 suena cuando termina. */
+  /* al subir de nivel: el aviso ya sono (sube_blind arranca 10s antes).
+     Si el nivel nuevo es el del add-on, add_on.mp3 se encadena al final. */
   useEffect(() => {
     if (!torneo) return;
-    if (nivelPrevio.current !== null && timer.nivel !== nivelPrevio.current) {
-      if (esAddonNivel(timer.nivel)) {
+    if (sbPrevio.current !== null && timer.sb !== sbPrevio.current) {
+      const eraAntes = sbPrevio.current * 2 < addonBB;
+      const esAhora = timer.sb * 2 >= addonBB;
+      if (eraAntes && esAhora) {
         avisar("🎁 ¡Add-on habilitado!");
-        const sb = getAudio("sube_blind.mp3");
-        if (sb && !sb.paused && !sb.ended) {
+        const sbAudio = getAudio("sube_blind.mp3");
+        if (sbAudio && !sbAudio.paused && !sbAudio.ended) {
           const alTerminar = () => {
-            sb.removeEventListener("ended", alTerminar);
+            sbAudio.removeEventListener("ended", alTerminar);
             sonar("add_on.mp3");
           };
-          sb.addEventListener("ended", alTerminar);
+          sbAudio.addEventListener("ended", alTerminar);
         } else {
           sonar("add_on.mp3");
         }
       }
     }
-    nivelPrevio.current = timer.nivel;
+    sbPrevio.current = timer.sb;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [torneo && timer.nivel]);
+  }, [torneo && timer.sb]);
 
   /* aviso de subida: sube_blind.mp3 arranca 10s antes del cambio */
   useEffect(() => {
     if (!torneo || !timer.corriendo || !timer.finTs) return;
     const falta = timer.finTs - Date.now();
-    if (falta <= 10000 && falta > 0 && ultimoBeep.current !== timer.finTs) {
-      ultimoBeep.current = timer.finTs; // una vez por nivel
+    if (falta <= 10000 && falta > 0 && ultimoAviso.current !== timer.finTs) {
+      ultimoAviso.current = timer.finTs; // una vez por nivel
       sonar("sube_blind.mp3");
     }
   });
@@ -1182,10 +1211,14 @@ function TabTimer({ data, guardar, torneo, avisar }) {
       </div>
     );
 
-  const niv = NIVELES[timer.nivel];
-  const prox = NIVELES[timer.nivel + 1] || null;
-  const esAddon = esAddonNivel(timer.nivel);
-  const proxAddon = prox && esAddonNivel(timer.nivel + 1);
+  const seq = secuencia();
+  const nivelNum = seq.length;
+  const prevSb = seq.length > 1 ? seq[seq.length - 2] : null;
+  const bb = timer.sb * 2;
+  const sbNext = siguienteSb(timer.sb);
+  const esAddon = bb >= addonBB && (prevSb === null || prevSb * 2 < addonBB);
+  const proxAddon = bb < addonBB && sbNext * 2 >= addonBB;
+  const pasoAplicado = pasoEfectivo(bb);
   const restante =
     timer.corriendo && timer.finTs
       ? Math.max(0, timer.finTs - Date.now())
@@ -1209,11 +1242,13 @@ function TabTimer({ data, guardar, torneo, avisar }) {
   };
 
   const saltar = (delta) => {
-    const nuevo = Math.min(NIVELES.length - 1, Math.max(0, timer.nivel + delta));
-    if (nuevo === timer.nivel) return;
+    let nuevoSb;
+    if (delta > 0) nuevoSb = sbNext;
+    else nuevoSb = prevSb != null ? prevSb : inicial;
+    if (nuevoSb === timer.sb) return;
     const dur = timer.durMin * 60000;
-    if (timer.corriendo) setTimer({ ...timer, nivel: nuevo, finTs: Date.now() + dur });
-    else setTimer({ ...timer, nivel: nuevo, restanteMs: dur });
+    if (timer.corriendo) setTimer({ ...timer, sb: nuevoSb, finTs: Date.now() + dur });
+    else setTimer({ ...timer, sb: nuevoSb, restanteMs: dur });
   };
 
   const setDur = (min) => {
@@ -1222,17 +1257,24 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     setTimer({ ...timer, durMin: m, restanteMs: m * 60000 });
   };
 
+  const setPaso = (v) => {
+    if (timer.corriendo) return;
+    const m = Math.max(100, Math.round(v / 100) * 100);
+    // si el manual queda igual o menor que la escalera, volver a config pura
+    setTimer({ ...timer, paso: m <= pasoConfig(bb) ? null : m });
+  };
+
   return (
     <div>
       <h2 className="lc-h2">Timer de blinds</h2>
 
       <div className={"lc-card lc-timer" + (esAddon ? " addon" : "")}>
         <div className="nivel-tag">
-          Nivel {timer.nivel + 1}
+          Nivel {nivelNum}
           {esAddon ? " · 🎁 Add-on habilitado" : ""}
         </div>
         <div className="blinds">
-          {fmtN(niv.sb)} / {fmtN(niv.bb)}
+          {fmtN(timer.sb)} / {fmtN(bb)}
         </div>
         <div
           className={
@@ -1242,9 +1284,8 @@ function TabTimer({ data, guardar, torneo, avisar }) {
           {mm}:{String(ss).padStart(2, "0")}
         </div>
         <div className="prox">
-          {prox
-            ? "Próximo: " + fmtN(prox.sb) + " / " + fmtN(prox.bb) + (proxAddon ? " · 🎁 add-on" : "")
-            : "Último nivel"}
+          Próximo: {fmtN(sbNext)} / {fmtN(sbNext * 2)}
+          {proxAddon ? " · 🎁 add-on" : ""}
         </div>
         {esAddon && !timer.corriendo && (
           <div className="prox">⏸ Pausa para el add-on · tocá ▶ para seguir</div>
@@ -1286,17 +1327,44 @@ function TabTimer({ data, guardar, torneo, avisar }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="lc-card">
+        <div className="lc-dur">
+          <button onClick={() => setPaso(pasoAplicado - 100)} disabled={timer.corriendo}>
+            −
+          </button>
+          <span>
+            +{fmtN(pasoAplicado)} <small>sube por nivel</small>
+          </span>
+          <button onClick={() => setPaso(pasoAplicado + 100)} disabled={timer.corriendo}>
+            +
+          </button>
+        </div>
+        <div className="lc-dur-presets">
+          {[100, 200, 500, 1000].map((m) => (
+            <button
+              key={m}
+              className={"lc-chip" + (pasoAplicado === m ? " on" : "")}
+              disabled={timer.corriendo}
+              onClick={() => setPaso(m)}
+            >
+              +{fmtN(m)}
+            </button>
+          ))}
+        </div>
         <p className="lc-nota">
-          Pausá para cambiar la duración: vale para el nivel actual (arranca de nuevo) y los
-          siguientes. Al llegar al big blind de {fmtN(addonBB)} (configurable en Ajustes),
-          el timer se pausa solo para hacer los add-ons: dale ▶ cuando terminen.
+          {timer.paso ? "Ajuste manual activo (+" + fmtN(timer.paso) + "). " : ""}
+          La escalera de Ajustes marca el mínimo: si ella pide un salto más grande, vale la
+          mayor. Pausá para cambiar. Al llegar al big blind de {fmtN(addonBB)}, el timer se
+          pausa solo para hacer los add-ons: dale ▶ cuando terminen.
         </p>
       </div>
 
       <p className="lc-nota centro">
-        Mientras corre, la pantalla de este celu queda encendida y suena el aviso en los
-        últimos 10 segundos + el gong al subir. Los demás celulares con la app abierta ven el
-        timer sincronizado.
+        Mientras corre, la pantalla de este celu queda encendida y el aviso suena 10 segundos
+        antes de cada subida. Los demás celulares con la app abierta ven el timer
+        sincronizado.
       </p>
     </div>
   );
@@ -1485,6 +1553,26 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
 
   const sumaPct = cfg.premios.reduce((a, b) => a + b, 0) + cfg.casa;
 
+  const tiersBlinds = [...(cfg.blindTiers || [])];
+  const guardarTiers = (arr) =>
+    setCfg({ blindTiers: [...arr].sort((a, b) => a.desdeBB - b.desdeBB) });
+  const setTier = (i, t) => {
+    const arr = [...tiersBlinds];
+    arr[i] = t;
+    guardarTiers(arr);
+  };
+  const quitarTier = (i) => guardarTiers(tiersBlinds.filter((_, x) => x !== i));
+  const agregarTier = () => {
+    const ultimo = tiersBlinds[tiersBlinds.length - 1];
+    guardarTiers([
+      ...tiersBlinds,
+      {
+        desdeBB: ultimo ? ultimo.desdeBB * 2 : 1000,
+        paso: ultimo ? ultimo.paso * 2 : 200,
+      },
+    ]);
+  };
+
   return (
     <div>
       <h2 className="lc-h2">Temporada</h2>
@@ -1542,6 +1630,37 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
         </label>
         <p className="lc-nota">
           Superar el máximo está permitido: se marca como "excepción", igual que en la mesa.
+        </p>
+      </div>
+
+      <h2 className="lc-h2">Escalera de blinds</h2>
+      <div className="lc-card lc-form">
+        <label>
+          Small blind inicial
+          <CampoNum step={100} min={25} value={cfg.blindInicial || 100} onCommit={(v) => setCfg({ blindInicial: v })} />
+        </label>
+        <label>
+          Sube de a (base)
+          <CampoNum step={100} min={25} value={cfg.blindPasoBase || 100} onCommit={(v) => setCfg({ blindPasoBase: v })} />
+        </label>
+        {tiersBlinds.map((t, i) => (
+          <div key={i} className="lc-tier">
+            <span>Big &gt;</span>
+            <CampoNum step={100} min={100} value={t.desdeBB} onCommit={(v) => setTier(i, { ...t, desdeBB: v })} />
+            <span>sube</span>
+            <CampoNum step={100} min={100} value={t.paso} onCommit={(v) => setTier(i, { ...t, paso: v })} />
+            <button className="lc-x" onClick={() => quitarTier(i)} title="Quitar escalón">
+              ✕
+            </button>
+          </div>
+        ))}
+        <button className="lc-btn fantasma" onClick={agregarTier}>
+          + Agregar escalón
+        </button>
+        <p className="lc-nota">
+          Ej.: inicial 100 subiendo de a 100; cuando el big pasa de 1.000, sube de a 200;
+          pasando 2.000, de a 500. En el reloj también se puede agrandar el paso a mano — y
+          siempre vale el mayor entre esta escalera y el ajuste manual.
         </p>
       </div>
 
@@ -1792,6 +1911,11 @@ const css = `
   font-size:16px; font-family:inherit; background:var(--papel);}
 .lc-form select{border:1px solid var(--linea); border-radius:10px; padding:11px;
   font-size:16px; font-family:inherit; background:var(--papel); color:var(--tinta);}
+.lc-tier{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700;
+  color:var(--suave);}
+.lc-tier input{width:100%; min-width:0; flex:1;}
+.lc-tier span{flex-shrink:0;}
+.lc-tier .lc-x{flex-shrink:0;}
 .lc-puntos-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px;}
 .lc-puntos-grid label{display:flex; flex-direction:column; gap:3px; font-size:12px;
   font-weight:800; color:var(--suave); text-align:center;}
