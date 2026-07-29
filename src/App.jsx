@@ -1073,7 +1073,7 @@ function TabTimer({ data, guardar, torneo, avisar }) {
   /* --- escalera dinamica --- */
   const pasoConfig = (bb) => {
     let p = pasoBase;
-    for (const t of tiers) if (bb > t.desdeBB) p = t.paso;
+    for (const t of tiers) if (bb >= t.desdeBB) p = t.paso;
     return p;
   };
   // "la mayor vence": entre la escalera de config y el ajuste manual del reloj
@@ -1645,7 +1645,7 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
         </label>
         {tiersBlinds.map((t, i) => (
           <div key={i} className="lc-tier">
-            <span>Big &gt;</span>
+            <span>Big ≥</span>
             <CampoNum step={100} min={100} value={t.desdeBB} onCommit={(v) => setTier(i, { ...t, desdeBB: v })} />
             <span>sube</span>
             <CampoNum step={100} min={100} value={t.paso} onCommit={(v) => setTier(i, { ...t, paso: v })} />
@@ -1658,9 +1658,9 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
           + Agregar escalón
         </button>
         <p className="lc-nota">
-          Ej.: inicial 100 subiendo de a 100; cuando el big pasa de 1.000, sube de a 200;
-          pasando 2.000, de a 500. En el reloj también se puede agrandar el paso a mano — y
-          siempre vale el mayor entre esta escalera y el ajuste manual.
+          Ej.: inicial 100 subiendo de a 100; cuando el big llega a 1.000, pasa a subir de a
+          200; al llegar a 2.000, de a 500. En el reloj también se puede agrandar el paso a
+          mano — y siempre vale el mayor entre esta escalera y el ajuste manual.
         </p>
       </div>
 
