@@ -1114,11 +1114,30 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     if (timer.finTs <= ahora) {
       let nivel = timer.nivel;
       let finTs = timer.finTs;
+      let pausaAddon = false;
       while (finTs <= ahora && nivel < NIVELES.length - 1) {
         nivel += 1;
         finTs += timer.durMin * 60000;
+        if (esAddonNivel(nivel)) {
+          // pausa automatica para hacer los add-ons (sin sonido de pausa:
+          // ya va a sonar el audio de add-on)
+          pausaAddon = true;
+          break;
+        }
       }
-      if (nivel !== timer.nivel) setTimer({ ...timer, nivel, finTs });
+      if (nivel !== timer.nivel) {
+        if (pausaAddon) {
+          setTimer({
+            ...timer,
+            nivel,
+            corriendo: false,
+            finTs: null,
+            restanteMs: timer.durMin * 60000,
+          });
+        } else {
+          setTimer({ ...timer, nivel, finTs });
+        }
+      }
     }
   });
 
@@ -1145,12 +1164,11 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [torneo && timer.nivel]);
 
-  /* aviso de subida: sube_blind.mp3 arranca 5s antes del cambio
-     (el audio trae su propio countdown de 5 segundos) */
+  /* aviso de subida: sube_blind.mp3 arranca 10s antes del cambio */
   useEffect(() => {
     if (!torneo || !timer.corriendo || !timer.finTs) return;
     const falta = timer.finTs - Date.now();
-    if (falta <= 5000 && falta > 0 && ultimoBeep.current !== timer.finTs) {
+    if (falta <= 10000 && falta > 0 && ultimoBeep.current !== timer.finTs) {
       ultimoBeep.current = timer.finTs; // una vez por nivel
       sonar("sube_blind.mp3");
     }
@@ -1228,6 +1246,9 @@ function TabTimer({ data, guardar, torneo, avisar }) {
             ? "Próximo: " + fmtN(prox.sb) + " / " + fmtN(prox.bb) + (proxAddon ? " · 🎁 add-on" : "")
             : "Último nivel"}
         </div>
+        {esAddon && !timer.corriendo && (
+          <div className="prox">⏸ Pausa para el add-on · tocá ▶ para seguir</div>
+        )}
         <div className="controles">
           <button className="paso" onClick={() => saltar(-1)} title="Nivel anterior">
             ⏮
@@ -1267,8 +1288,8 @@ function TabTimer({ data, guardar, torneo, avisar }) {
         </div>
         <p className="lc-nota">
           Pausá para cambiar la duración: vale para el nivel actual (arranca de nuevo) y los
-          siguientes. El add-on se habilita al llegar al big blind de {fmtN(addonBB)}
-          (configurable en Ajustes).
+          siguientes. Al llegar al big blind de {fmtN(addonBB)} (configurable en Ajustes),
+          el timer se pausa solo para hacer los add-ons: dale ▶ cuando terminen.
         </p>
       </div>
 
@@ -1516,7 +1537,7 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
           <CampoNum min={1} value={cfg.maxEntradas} onCommit={(v) => setCfg({ maxEntradas: v })} />
         </label>
         <label>
-          Add-on: se habilita al llegar al big blind de (Gs)
+          Add-on: se habilita al llegar al big blind de
           <CampoNum step={100} value={cfg.addonBB || 2000} onCommit={(v) => setCfg({ addonBB: v })} />
         </label>
         <p className="lc-nota">
