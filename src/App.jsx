@@ -27,7 +27,7 @@ const CONFIG_DEFAULT = {
   ], // escalones: cuando el big supera desdeBB, sube de a "paso"
 };
 
-const ADS_VIDEOS = ["xh_7D0Nrq24", "w6qAtapjGFA", "P0P8EWoff4w"];
+const ADS_VIDEOS = ["xh_7D0Nrq24", "P0P8EWoff4w"];
 
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
 const uid = () => Math.random().toString(36).slice(2, 10);
