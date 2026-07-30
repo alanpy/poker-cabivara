@@ -22,6 +22,8 @@ export function conectarFirebase() {
         doc,
         onSnapshot,
         setDoc,
+        collection,
+        getDocs,
       } = await import("firebase/firestore");
       const app = initializeApp(firebaseConfig);
       let db;
@@ -33,7 +35,7 @@ export function conectarFirebase() {
       } catch (e) {
         db = getFirestore(app);
       }
-      return { db, doc, onSnapshot, setDoc };
+      return { db, doc, onSnapshot, setDoc, collection, getDocs };
     })();
   }
   return promesa;

@@ -28,7 +28,42 @@ const CONFIG_DEFAULT = {
   ], // escalones: cuando el big supera desdeBB, sube de a "paso"
 };
 
-const ADS_VIDEOS = ["xh_7D0Nrq24", "P0P8EWoff4w"];
+const ADS_VIDEOS = ["xh_7D0Nrq24", "P0P8EWoff4w"]; // fallback sin conexion
+
+/* Elige el video de "publicidad" desde Firestore (coleccion "ads"):
+   - cada doc: id = ID del video de YouTube, campo vistas (numero)
+   - se toma el de MENOS vistas; si hay empate, se sortea entre esos
+   - al elegirlo se suma 1 al contador, asi van rotando parejo
+   - si la coleccion esta vacia, se siembran los videos iniciales
+   Para agregar videos: en la consola de Firestore, coleccion "ads",
+   nuevo documento con ID = id del video (lo de despues de watch?v=) y vistas: 0 */
+async function elegirAdVideo() {
+  try {
+    const { db, doc, setDoc, collection, getDocs } = await conectarFirebase();
+    const snap = await getDocs(collection(db, "ads"));
+    let lista = [];
+    snap.forEach((d) => {
+      const datos = d.data() || {};
+      lista.push({ id: d.id, vistas: typeof datos.vistas === "number" ? datos.vistas : 0 });
+    });
+    if (lista.length === 0) {
+      for (const v of ADS_VIDEOS) {
+        await setDoc(doc(db, "ads", v), { vistas: 0 });
+      }
+      lista = ADS_VIDEOS.map((v) => ({ id: v, vistas: 0 }));
+    }
+    const min = Math.min(...lista.map((x) => x.vistas));
+    const candidatos = lista.filter((x) => x.vistas === min);
+    const elegido = candidatos[Math.floor(Math.random() * candidatos.length)];
+    setDoc(doc(db, "ads", elegido.id), { vistas: elegido.vistas + 1 }, { merge: true }).catch(
+      () => {}
+    );
+    return elegido.id;
+  } catch (e) {
+    console.error("ads:", e);
+    return ADS_VIDEOS[Math.floor(Math.random() * ADS_VIDEOS.length)];
+  }
+}
 
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -353,7 +388,7 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
 
   const alEmpezar = () => {
     if (cfg.ads !== false) {
-      setAd({ id: ADS_VIDEOS[Math.floor(Math.random() * ADS_VIDEOS.length)], seg: 5 });
+      elegirAdVideo().then((id) => setAd({ id, seg: 5 }));
     } else {
       crearTorneo();
     }
