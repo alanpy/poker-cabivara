@@ -284,7 +284,7 @@ export default function LigaCarpincho() {
         {tab === "timer" && (
           <TabTimer data={data} guardar={guardar} torneo={torneo} avisar={avisar} />
         )}
-        {tab === "ranking" && <TabRanking data={data} />}
+        {tab === "ranking" && <TabRanking data={data} raiz={raiz} />}
         {tab === "ajustes" && (
           <TabAjustes
             data={data}
@@ -1374,11 +1374,10 @@ function TabTimer({ data, guardar, torneo, avisar }) {
 /* ============================================================
    TAB: RANKING
    ============================================================ */
-function TabRanking({ data }) {
+function calcularRanking(data) {
   const cfg = data.config;
   const cerrados = data.torneos.filter((t) => t.cerrado);
   const nPos = cfg.puntos.length;
-
   const stats = {};
   for (const t of cerrados) {
     const puntosT = (t.config && t.config.puntos) || cfg.puntos;
@@ -1391,7 +1390,6 @@ function TabRanking({ data }) {
       if (pos >= 1 && pos <= nPos) stats[jid].pos[pos - 1] += 1;
     }
   }
-
   const filas = Object.keys(stats)
     .map((jid) => ({
       jid,
@@ -1402,63 +1400,120 @@ function TabRanking({ data }) {
       (a, b) =>
         b.puntos - a.puntos || b.pos[0] - a.pos[0] || a.nombre.localeCompare(b.nombre)
     );
+  return { filas, nPos, cerrados: cerrados.length };
+}
 
-  if (filas.length === 0)
-    return (
-      <div className="lc-card lc-vacio">
-        <Capi size={56} />
-        <p>
-          El ranking aparece cuando se cierra el primer torneo. El carpincho de oro espera a su
-          dueño…
-        </p>
+function cabeceraPos(i) {
+  return i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}º`;
+}
+
+function TablaRanking({ filas, nPos }) {
+  return (
+    <div className="lc-tabla-scroll">
+      <div className="lc-t2">
+        <div className="lc-t2-fila head">
+          <span className="fijo-izq">Jugador</span>
+          {Array.from({ length: nPos }, (_, i) => (
+            <span key={i} className="celda">
+              {cabeceraPos(i)}
+            </span>
+          ))}
+          <span className="fijo-der">Pts</span>
+        </div>
+        {filas.map((f, i) => (
+          <div key={f.jid} className={"lc-t2-fila" + (i === 0 ? " lider" : "")}>
+            <span className="fijo-izq">
+              {i === 0 && "🏆 "}
+              {i === 1 && "🥈 "}
+              {i === 2 && "🥉 "}
+              {i + 1}. {f.nombre}
+            </span>
+            {f.pos.map((c, j) => (
+              <span key={j} className="celda">
+                {c || "·"}
+              </span>
+            ))}
+            <span className="fijo-der">{f.puntos}</span>
+          </div>
+        ))}
       </div>
-    );
+    </div>
+  );
+}
 
-  const cabecera = (i) =>
-    i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}º`;
+function RankingTemporada({ temporada }) {
+  const [abierto, setAbierto] = useState(false);
+  const { filas, nPos, cerrados } = calcularRanking(temporada.data);
+  const campeon = filas[0];
+  return (
+    <div className="lc-card lc-resumen-wrap">
+      <button className="lc-resumen" onClick={() => setAbierto(!abierto)}>
+        <div>
+          <strong>Temporada {temporada.nombre}</strong>
+          <span>
+            {cerrados} torneo{cerrados !== 1 ? "s" : ""} · {filas.length} jugadores
+          </span>
+        </div>
+        <span className="lc-ganador">
+          {campeon && (
+            <>
+              🏆 {campeon.nombre} · {campeon.puntos} pts
+            </>
+          )}
+          <span className={"lc-flecha" + (abierto ? " abierta" : "")}>▾</span>
+        </span>
+      </button>
+      {abierto && (
+        <div className="lc-ranking-det">
+          <TablaRanking filas={filas} nPos={nPos} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabRanking({ data, raiz }) {
+  const cfg = data.config;
+  const { filas, nPos, cerrados } = calcularRanking(data);
+  const anteriores = raiz.temporadas
+    .filter((t) => t.id !== raiz.temporadaActualId)
+    .sort((a, b) => b.nombre.localeCompare(a.nombre));
 
   return (
     <div>
       <h2 className="lc-h2">Ranking de la liga</h2>
-      <p className="lc-nota">
-        Puntos por posición: {cfg.puntos.map((p, i) => `${i + 1}º=${p}`).join(" · ")}
-      </p>
-      <div className="lc-card lc-tabla2">
-        <div className="lc-tabla-scroll">
-          <div className="lc-t2">
-            <div className="lc-t2-fila head">
-              <span className="fijo-izq">Jugador</span>
-              {Array.from({ length: nPos }, (_, i) => (
-                <span key={i} className="celda">
-                  {cabecera(i)}
-                </span>
-              ))}
-              <span className="fijo-der">Pts</span>
-            </div>
-            {filas.map((f, i) => (
-              <div key={f.jid} className={"lc-t2-fila" + (i === 0 ? " lider" : "")}>
-                <span className="fijo-izq">
-                  {i === 0 && "🏆 "}
-                  {i === 1 && "🥈 "}
-                  {i === 2 && "🥉 "}
-                  {i + 1}. {f.nombre}
-                </span>
-                {f.pos.map((c, j) => (
-                  <span key={j} className="celda">
-                    {c || "·"}
-                  </span>
-                ))}
-                <span className="fijo-der">{f.puntos}</span>
-              </div>
-            ))}
-          </div>
+      {filas.length === 0 ? (
+        <div className="lc-card lc-vacio">
+          <Capi size={56} />
+          <p>
+            El ranking aparece cuando se cierra el primer torneo. El carpincho de oro espera a
+            su dueño…
+          </p>
         </div>
-      </div>
-      <p className="lc-nota centro">
-        Deslizá la tabla para ver todas las posiciones · {cerrados.length} torneo
-        {cerrados.length !== 1 ? "s" : ""} jugado{cerrados.length !== 1 ? "s" : ""} · el 1º del
-        año se lleva el trofeo carpincho
-      </p>
+      ) : (
+        <>
+          <p className="lc-nota">
+            Puntos por posición: {cfg.puntos.map((p, i) => `${i + 1}º=${p}`).join(" · ")}
+          </p>
+          <div className="lc-card lc-tabla2">
+            <TablaRanking filas={filas} nPos={nPos} />
+          </div>
+          <p className="lc-nota centro">
+            Deslizá la tabla para ver todas las posiciones · {cerrados} torneo
+            {cerrados !== 1 ? "s" : ""} jugado{cerrados !== 1 ? "s" : ""} · el 1º del año se
+            lleva el trofeo carpincho
+          </p>
+        </>
+      )}
+
+      {anteriores.length > 0 && (
+        <>
+          <h2 className="lc-h2">Temporadas anteriores</h2>
+          {anteriores.map((t) => (
+            <RankingTemporada key={t.id} temporada={t} />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -2056,4 +2111,11 @@ const css = `
 .lc-dur-presets{display:flex; justify-content:center; gap:8px; margin-top:12px;}
 .lc-dur-presets .lc-chip:disabled{opacity:.4;}
 @media (prefers-reduced-motion:reduce){.lc-timer .cuenta.alerta{animation:none;}}
+
+/* --- ranking de temporadas anteriores --- */
+.lc-ranking-det{border-top:1px solid var(--linea); background:#FCF9F2;}
+.lc-ranking-det .fijo-izq,.lc-ranking-det .fijo-der{background:#FCF9F2;}
+.lc-ranking-det .lc-t2-fila.lider{background:#FDF3E4;}
+.lc-ranking-det .lc-t2-fila.lider .fijo-izq,
+.lc-ranking-det .lc-t2-fila.lider .fijo-der{background:#FDF3E4;}
 `;
