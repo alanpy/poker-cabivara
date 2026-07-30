@@ -497,14 +497,20 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     if (delta > 0 && nuevo > cfg.maxEntradas)
       avisar(`Ojo: supera el acuerdo de ${cfg.maxEntradas} entradas (excepción)`);
     actualizarTorneo({
-      entradas: { ...torneo.entradas, [jid]: { ...e, buyins: nuevo } },
+      entradas: {
+        ...torneo.entradas,
+        [jid]: { ...e, buyins: nuevo, pagadas: Math.min(e.pagadas || 0, nuevo) },
+      },
     });
   };
 
   const toggleAddon = (jid) => {
     const e = torneo.entradas[jid];
     actualizarTorneo({
-      entradas: { ...torneo.entradas, [jid]: { ...e, addon: !e.addon } },
+      entradas: {
+        ...torneo.entradas,
+        [jid]: { ...e, addon: !e.addon, addonPagado: e.addon ? false : e.addonPagado || false },
+      },
     });
   };
 
@@ -564,8 +570,12 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
   }, 0);
   const sinCobrar = jugadoresT.reduce((acc, jid) => {
     const e = torneo.entradas[jid];
-    const totalJug = e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
-    return acc + Math.max(0, totalJug - (e.pagado || 0));
+    const pagadas = Math.min(e.pagadas || 0, e.buyins);
+    return (
+      acc +
+      (e.buyins - pagadas) * cfg.buyIn +
+      (e.addon && !e.addonPagado ? cfg.addOn : 0)
+    );
   }, 0);
 
   const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
@@ -665,23 +675,43 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
               </button>
             )}
             {(() => {
-              const totalJug = e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
-              const pagado = e.pagado || 0;
-              const debe = Math.max(0, totalJug - pagado);
+              const pagadas = Math.min(e.pagadas || 0, e.buyins);
+              const addonPagado = !!e.addonPagado;
+              const debe =
+                (e.buyins - pagadas) * cfg.buyIn +
+                (e.addon && !addonPagado ? cfg.addOn : 0);
+              const setPagos = (nPagadas, aPagado) =>
+                actualizarTorneo({
+                  entradas: {
+                    ...torneo.entradas,
+                    [jid]: { ...e, pagadas: nPagadas, addonPagado: aPagado },
+                  },
+                });
               return (
-                <button
-                  className={"lc-pago" + (debe > 0 ? " debe" : " ok")}
-                  onClick={() =>
-                    actualizarTorneo({
-                      entradas: {
-                        ...torneo.entradas,
-                        [jid]: { ...e, pagado: debe > 0 ? totalJug : 0 },
-                      },
-                    })
-                  }
-                >
-                  {debe > 0 ? "💵 Debe " + fmtGs(debe) + " · tocá al cobrar" : "💵 Al día"}
-                </button>
+                <div className="lc-pagos">
+                  {Array.from({ length: e.buyins }, (_, i) => (
+                    <button
+                      key={i}
+                      className={"lc-pago-chip" + (i < pagadas ? " ok" : "")}
+                      onClick={() =>
+                        setPagos(i < pagadas ? pagadas - 1 : pagadas + 1, addonPagado)
+                      }
+                    >
+                      {i + 1}ª {i < pagadas ? "✓" : "💵"}
+                    </button>
+                  ))}
+                  {e.addon && (
+                    <button
+                      className={"lc-pago-chip" + (addonPagado ? " ok" : "")}
+                      onClick={() => setPagos(pagadas, !addonPagado)}
+                    >
+                      Add-on {addonPagado ? "✓" : "💵"}
+                    </button>
+                  )}
+                  <span className={"lc-pago-resumen" + (debe > 0 ? " debe" : " ok")}>
+                    {debe > 0 ? "Debe " + fmtGs(debe) : "Al día ✓"}
+                  </span>
+                </div>
               );
             })()}
           </div>
@@ -2187,10 +2217,14 @@ const css = `
 .lc-ranking-det .lc-t2-fila.lider .fijo-der{background:#FDF3E4;}
 
 /* --- control de pagos --- */
-.lc-pago{width:100%; margin-top:8px; border-radius:10px; padding:9px; font-size:13px;
-  font-weight:800; cursor:pointer; font-family:inherit; border:1.5px solid;}
-.lc-pago.debe{background:#FBEFDF; color:#B25E1B; border-color:#F0CFAE;}
-.lc-pago.ok{background:#E9F2EA; color:#2F5D48; border-color:#C8DECC;}
+.lc-pagos{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:9px;}
+.lc-pago-chip{border-radius:999px; padding:7px 12px; font-size:12.5px; font-weight:800;
+  cursor:pointer; font-family:inherit; border:1.5px solid #F0CFAE; background:#FBEFDF;
+  color:#B25E1B;}
+.lc-pago-chip.ok{background:#E9F2EA; color:#2F5D48; border-color:#C8DECC;}
+.lc-pago-resumen{margin-left:auto; font-size:12.5px; font-weight:800;}
+.lc-pago-resumen.debe{color:#B25E1B;}
+.lc-pago-resumen.ok{color:#2F5D48;}
 .lc-sincobrar{margin-top:10px; padding-top:10px; border-top:1px dashed var(--linea);
   display:flex; justify-content:space-between; font-size:14px; color:#B25E1B;
   font-weight:700;}
