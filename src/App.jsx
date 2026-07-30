@@ -1784,15 +1784,15 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
             const ok = window.confirm(
               "Esto REEMPLAZA todos los datos actuales (" +
                 (fuente === "firebase" ? "de la nube, para todos" : "locales de este celu") +
-                ") por el historial oficial 2024–2026 de la planilla (67 torneos). ¿Continuar?"
+                ") por el historial oficial 2023–2026 de la planilla (92 torneos). ¿Continuar?"
             );
             if (ok) {
               guardarRaiz(JSON.parse(JSON.stringify(SEED)));
-              avisar("Historial 2024–2026 cargado 🏆");
+              avisar("Historial 2023–2026 cargado 🏆");
             }
           }}
         >
-          📥 Cargar historial 2024–2026 de la planilla
+          📥 Cargar historial 2023–2026 de la planilla
         </button>
       </div>
 
