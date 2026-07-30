@@ -628,10 +628,17 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
         const excede = e.buyins > cfg.maxEntradas;
         const eliminado = !!pos;
         return (
-          <div key={jid} className={"lc-card lc-jug" + (eliminado ? " out" : "")}>
+          <div
+            key={jid}
+            className={
+              "lc-card lc-jug" +
+              (eliminado && pos !== 1 ? " out" : "") +
+              (pos === 1 ? " campeon" : "")
+            }
+          >
             <div className="lc-jug-top">
               <div className="lc-jug-nombre">
-                {pos === 1 && <span className="medalla oro">1º</span>}
+                {pos === 1 && <span className="lc-trofeo">🏆</span>}
                 {pos === 2 && <span className="medalla plata">2º</span>}
                 {pos === 3 && <span className="medalla bronce">3º</span>}
                 {pos > 3 && <span className="medalla gris">{pos}º</span>}
@@ -2229,4 +2236,11 @@ const css = `
   display:flex; justify-content:space-between; font-size:14px; color:#B25E1B;
   font-weight:700;}
 .lc-sincobrar strong{font-variant-numeric:tabular-nums;}
+
+/* --- card del campeon del torneo --- */
+.lc-jug.campeon{background:linear-gradient(135deg,#FFFAEA,#FCEFCF);
+  border:1.5px solid #E5C36A;
+  box-shadow:0 0 0 2.5px rgba(217,160,18,.35), 0 3px 10px rgba(217,160,18,.22);}
+.lc-jug.campeon .lc-jug-nombre{font-size:17.5px;}
+.lc-trofeo{font-size:22px; line-height:1;}
 `;
