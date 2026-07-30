@@ -1639,7 +1639,9 @@ function TabAjustes({ data, guardar, avisar, raiz, guardarRaiz, fuente, cambiarF
             value={raiz.temporadaActualId}
             onChange={(e) => cambiarTemporada(e.target.value)}
           >
-            {raiz.temporadas.map((t) => (
+            {[...raiz.temporadas]
+              .sort((a, b) => b.nombre.localeCompare(a.nombre, undefined, { numeric: true }))
+              .map((t) => (
               <option key={t.id} value={t.id}>
                 {t.nombre} · {t.data.torneos.filter((x) => x.cerrado).length} torneo
                 {t.data.torneos.filter((x) => x.cerrado).length !== 1 ? "s" : ""}
