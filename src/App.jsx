@@ -562,6 +562,11 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
     const e = torneo.entradas[jid];
     return acc + e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
   }, 0);
+  const sinCobrar = jugadoresT.reduce((acc, jid) => {
+    const e = torneo.entradas[jid];
+    const totalJug = e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
+    return acc + Math.max(0, totalJug - (e.pagado || 0));
+  }, 0);
 
   const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
   const ordenados = [...jugadoresT].sort((a, b) => {
@@ -659,6 +664,26 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
                 Marcar eliminado ({total - asignadas}º puesto)
               </button>
             )}
+            {(() => {
+              const totalJug = e.buyins * cfg.buyIn + (e.addon ? cfg.addOn : 0);
+              const pagado = e.pagado || 0;
+              const debe = Math.max(0, totalJug - pagado);
+              return (
+                <button
+                  className={"lc-pago" + (debe > 0 ? " debe" : " ok")}
+                  onClick={() =>
+                    actualizarTorneo({
+                      entradas: {
+                        ...torneo.entradas,
+                        [jid]: { ...e, pagado: debe > 0 ? totalJug : 0 },
+                      },
+                    })
+                  }
+                >
+                  {debe > 0 ? "💵 Debe " + fmtGs(debe) + " · tocá al cobrar" : "💵 Al día"}
+                </button>
+              );
+            })()}
           </div>
         );
       })}
@@ -684,6 +709,11 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
             <strong>{fmtGs((pozo * cfg.casa) / 100)}</strong>
           </div>
         </div>
+        {sinCobrar > 0 && (
+          <div className="lc-sincobrar">
+            💵 Sin cobrar: <strong>{fmtGs(sinCobrar)}</strong>
+          </div>
+        )}
       </div>
 
       {asignadas === total && total > 0 && (
@@ -2155,4 +2185,14 @@ const css = `
 .lc-ranking-det .lc-t2-fila.lider{background:#FDF3E4;}
 .lc-ranking-det .lc-t2-fila.lider .fijo-izq,
 .lc-ranking-det .lc-t2-fila.lider .fijo-der{background:#FDF3E4;}
+
+/* --- control de pagos --- */
+.lc-pago{width:100%; margin-top:8px; border-radius:10px; padding:9px; font-size:13px;
+  font-weight:800; cursor:pointer; font-family:inherit; border:1.5px solid;}
+.lc-pago.debe{background:#FBEFDF; color:#B25E1B; border-color:#F0CFAE;}
+.lc-pago.ok{background:#E9F2EA; color:#2F5D48; border-color:#C8DECC;}
+.lc-sincobrar{margin-top:10px; padding-top:10px; border-top:1px dashed var(--linea);
+  display:flex; justify-content:space-between; font-size:14px; color:#B25E1B;
+  font-weight:700;}
+.lc-sincobrar strong{font-variant-numeric:tabular-nums;}
 `;
