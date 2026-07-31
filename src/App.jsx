@@ -68,10 +68,10 @@ async function elegirAdVideo() {
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
 
 /* adornos especiales por jugador (se aplican donde se muestra el nombre) */
-const ADORNOS = { bruna: "💙", eva: "🧡", monchi: "🩼", valter: "🔥" };
+const ADORNOS = { bruna: "💙", eva: "🧡", monchi: "🩼", valter: "🔥", nando: "🍽️" };
 const adornar = (nombre) => {
   const a = ADORNOS[(nombre || "").toLowerCase().trim()];
-  return a ? a + " " + nombre : nombre;
+  return a ? nombre + " " + a : nombre;
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const hoy = () =>
