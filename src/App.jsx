@@ -68,7 +68,14 @@ async function elegirAdVideo() {
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
 
 /* adornos especiales por jugador (se aplican donde se muestra el nombre) */
-const ADORNOS = { bruna: "💙", eva: "🧡", monchi: "🩼", valter: "🔥", nando: "🍽️" };
+const ADORNOS = {
+  bruna: "💙",
+  eva: "🧡",
+  monchi: "🩼",
+  valter: "🔥",
+  nando: "🍽️",
+  jacson: "🥁",
+};
 const adornar = (nombre) => {
   const a = ADORNOS[(nombre || "").toLowerCase().trim()];
   return a ? nombre + " " + a : nombre;
