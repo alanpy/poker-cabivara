@@ -66,6 +66,13 @@ async function elegirAdVideo() {
 }
 
 const fmtGs = (n) => new Intl.NumberFormat("es-PY").format(Math.round(n)) + " Gs";
+
+/* adornos especiales por jugador (se aplican donde se muestra el nombre) */
+const ADORNOS = { bruna: "💙", eva: "🧡" };
+const adornar = (nombre) => {
+  const a = ADORNOS[(nombre || "").toLowerCase().trim()];
+  return a ? a + " " + nombre : nombre;
+};
 const uid = () => Math.random().toString(36).slice(2, 10);
 const hoy = () =>
   new Date().toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -660,7 +667,7 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
                 {pos === 2 && <span className="medalla plata">2º</span>}
                 {pos === 3 && <span className="medalla bronce">3º</span>}
                 {pos > 3 && <span className="medalla gris">{pos}º</span>}
-                {nombreDe(jid)}
+                {adornar(nombreDe(jid))}
                 {excede && <span className="lc-excepcion">excepción</span>}
               </div>
               {esUltimoElim(jid) && !torneo.cerrado && (
@@ -773,7 +780,7 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
             )}
             {saldos.map((x) => (
               <div key={x.jid} className={"fila " + (x.saldo > 0 ? "recibe" : "paga")}>
-                <span>{nombreDe(x.jid)}</span>
+                <span>{adornar(nombreDe(x.jid))}</span>
                 <strong>
                   {x.saldo > 0 ? "recibe " + fmtGs(x.saldo) : "paga " + fmtGs(-x.saldo)}
                 </strong>
@@ -824,7 +831,7 @@ function ResumenTorneo({ t, data }) {
         <span className="lc-ganador">
           {ganador && (
             <>
-              <span className="medalla oro">1º</span> {nombreDe(ganador)}
+              <span className="medalla oro">1º</span> {adornar(nombreDe(ganador))}
             </>
           )}
           <span className={"lc-flecha" + (abierto ? " abierta" : "")}>▾</span>
@@ -841,7 +848,7 @@ function ResumenTorneo({ t, data }) {
               <div key={jid} className="fila">
                 <span className="pos">{pos ? iconoPos(pos) : "·"}</span>
                 <span className="nom">
-                  {nombreDe(jid)}
+                  {adornar(nombreDe(jid))}
                   <small>
                     {e.buyins} entrada{e.buyins > 1 ? "s" : ""}
                     {e.addon ? " + add-on" : ""}
@@ -1087,7 +1094,7 @@ function TabMesa({ data, guardar, torneo, avisar }) {
                 ) : (
                   <>
                     <span className="nro">{nro}</span>
-                    <span className="nom">{jid ? nombreDe(jid) : "Libre"}</span>
+                    <span className="nom">{jid ? adornar(nombreDe(jid)) : "Libre"}</span>
                   </>
                 )}
               </button>
@@ -1107,7 +1114,7 @@ function TabMesa({ data, guardar, torneo, avisar }) {
 
       {!anim && sinAsiento.length > 0 && (
         <p className="lc-nota centro">
-          Sin asiento: {sinAsiento.map(nombreDe).join(", ")}
+          Sin asiento: {sinAsiento.map((j) => adornar(nombreDe(j))).join(", ")}
         </p>
       )}
 
@@ -1117,7 +1124,7 @@ function TabMesa({ data, guardar, torneo, avisar }) {
             <h3>Asiento {asignando} · ¿quien se sienta?</h3>
             {sinAsiento.map((jid) => (
               <button key={jid} className="lc-btn opcion" onClick={() => asignarJugador(jid)}>
-                {nombreDe(jid)}
+                {adornar(nombreDe(jid))}
               </button>
             ))}
             <button className="lc-btn fantasma" onClick={() => setAsignando(null)}>
@@ -1558,7 +1565,7 @@ function TablaRanking({ filas, nPos }) {
               {i === 0 && "🏆 "}
               {i === 1 && "🥈 "}
               {i === 2 && "🥉 "}
-              {i + 1}. {f.nombre}
+              {i + 1}. {adornar(f.nombre)}
             </span>
             {f.pos.map((c, j) => (
               <span key={j} className="celda">
@@ -1589,7 +1596,7 @@ function RankingTemporada({ temporada }) {
         <span className="lc-ganador">
           {campeon && (
             <>
-              🏆 {campeon.nombre} · {campeon.puntos} pts
+              🏆 {adornar(campeon.nombre)} · {campeon.puntos} pts
             </>
           )}
           <span className={"lc-flecha" + (abierto ? " abierta" : "")}>▾</span>
