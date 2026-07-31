@@ -580,8 +580,12 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
 
   const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
   const ordenados = [...jugadoresT].sort((a, b) => {
-    const pa = torneo.posiciones[a] || 999;
-    const pb = torneo.posiciones[b] || 999;
+    const pa = torneo.posiciones[a] || 0;
+    const pb = torneo.posiciones[b] || 0;
+    const elimA = pa > 0 ? 1 : 0;
+    const elimB = pb > 0 ? 1 : 0;
+    // en juego primero; eliminados al final ordenados por puesto
+    if (elimA !== elimB) return elimA - elimB;
     return pa - pb || nombreDe(a).localeCompare(nombreDe(b));
   });
 
