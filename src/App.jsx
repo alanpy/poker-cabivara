@@ -577,6 +577,20 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
       (e.addon && !e.addonPagado ? cfg.addOn : 0)
     );
   }, 0);
+  /* saldo neto por jugador: premio (si ya tiene puesto premiado) menos deuda */
+  const saldos = jugadoresT
+    .map((jid) => {
+      const e = torneo.entradas[jid];
+      const pagadas = Math.min(e.pagadas || 0, e.buyins);
+      const debe =
+        (e.buyins - pagadas) * cfg.buyIn + (e.addon && !e.addonPagado ? cfg.addOn : 0);
+      const pos = torneo.posiciones[jid];
+      const premio =
+        pos && pos <= cfg.premios.length ? (pozo * cfg.premios[pos - 1]) / 100 : 0;
+      return { jid, saldo: premio - debe };
+    })
+    .filter((x) => x.saldo !== 0)
+    .sort((a, b) => b.saldo - a.saldo);
 
   const nombreDe = (jid) => data.jugadores.find((j) => j.id === jid)?.nombre || "?";
   const ordenados = [...jugadoresT].sort((a, b) => {
@@ -750,9 +764,21 @@ function TabTorneo({ data, guardar, torneo, avisar }) {
             <strong>{fmtGs((pozo * cfg.casa) / 100)}</strong>
           </div>
         </div>
-        {sinCobrar > 0 && (
-          <div className="lc-sincobrar">
-            💵 Sin cobrar: <strong>{fmtGs(sinCobrar)}</strong>
+        {(sinCobrar > 0 || saldos.length > 0) && (
+          <div className="lc-saldos">
+            {sinCobrar > 0 && (
+              <div className="lc-sincobrar">
+                💵 Sin cobrar: <strong>{fmtGs(sinCobrar)}</strong>
+              </div>
+            )}
+            {saldos.map((x) => (
+              <div key={x.jid} className={"fila " + (x.saldo > 0 ? "recibe" : "paga")}>
+                <span>{nombreDe(x.jid)}</span>
+                <strong>
+                  {x.saldo > 0 ? "recibe " + fmtGs(x.saldo) : "paga " + fmtGs(-x.saldo)}
+                </strong>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -2236,10 +2262,15 @@ const css = `
 .lc-pago-resumen{margin-left:auto; font-size:12.5px; font-weight:800;}
 .lc-pago-resumen.debe{color:#B25E1B;}
 .lc-pago-resumen.ok{color:#2F5D48;}
-.lc-sincobrar{margin-top:10px; padding-top:10px; border-top:1px dashed var(--linea);
-  display:flex; justify-content:space-between; font-size:14px; color:#B25E1B;
-  font-weight:700;}
+.lc-saldos{margin-top:10px; padding-top:4px; border-top:1px dashed var(--linea);}
+.lc-sincobrar{display:flex; justify-content:space-between; font-size:14px; color:#B25E1B;
+  font-weight:700; padding:6px 0; border-bottom:1px dashed var(--linea);}
 .lc-sincobrar strong{font-variant-numeric:tabular-nums;}
+.lc-saldos .fila{display:flex; justify-content:space-between; padding:6px 0;
+  font-size:14px; font-weight:600;}
+.lc-saldos .fila strong{font-variant-numeric:tabular-nums; font-weight:800;}
+.lc-saldos .fila.recibe strong{color:var(--felt);}
+.lc-saldos .fila.paga strong{color:#B25E1B;}
 
 /* --- card del campeon del torneo --- */
 .lc-jug.campeon{background:linear-gradient(135deg,#FFFAEA,#FCEFCF);
