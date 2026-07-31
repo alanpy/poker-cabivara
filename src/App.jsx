@@ -75,6 +75,7 @@ const ADORNOS = {
   valter: "🔥",
   nando: "🍽️",
   jacson: "🥁",
+  fausto: "🛋️",
 };
 const adornar = (nombre) => {
   const a = ADORNOS[(nombre || "").toLowerCase().trim()];
