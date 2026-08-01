@@ -1323,18 +1323,20 @@ function TabTimer({ data, guardar, torneo, avisar }) {
     if (sbPrevio.current !== null && timer.sb !== sbPrevio.current) {
       const eraAntes = sbPrevio.current * 2 < addonBB;
       const esAhora = timer.sb * 2 >= addonBB;
-      if (eraAntes && esAhora) {
-        avisar("🎁 ¡Add-on habilitado!");
-        const sbAudio = getAudio("sube_blind.mp3");
-        if (sbAudio && !sbAudio.paused && !sbAudio.ended) {
-          const alTerminar = () => {
-            sbAudio.removeEventListener("ended", alTerminar);
-            sonar("add_on.mp3");
-          };
-          sbAudio.addEventListener("ended", alTerminar);
-        } else {
-          sonar("add_on.mp3");
-        }
+      const cruceAddon = eraAntes && esAhora;
+      // segundo audio de la subida: la bocina del ratinho en niveles normales,
+      // el anuncio de add-on cuando toca ese nivel
+      const segundo = cruceAddon ? "add_on.mp3" : "ratinho.mp3";
+      if (cruceAddon) avisar("🎁 ¡Add-on habilitado!");
+      const sbAudio = getAudio("sube_blind.mp3");
+      if (sbAudio && !sbAudio.paused && !sbAudio.ended) {
+        const alTerminar = () => {
+          sbAudio.removeEventListener("ended", alTerminar);
+          sonar(segundo);
+        };
+        sbAudio.addEventListener("ended", alTerminar);
+      } else {
+        sonar(segundo);
       }
     }
     sbPrevio.current = timer.sb;
@@ -1376,7 +1378,7 @@ function TabTimer({ data, guardar, torneo, avisar }) {
 
   const play = () => {
     sonar("resume_timer.mp3");
-    prepararAudios(["sube_blind.mp3", "add_on.mp3", "pause_timer.mp3"]);
+    prepararAudios(["sube_blind.mp3", "add_on.mp3", "pause_timer.mp3", "ratinho.mp3"]);
     pedirWake();
     const base = timer.restanteMs != null ? timer.restanteMs : timer.durMin * 60000;
     setTimer({ ...timer, corriendo: true, finTs: Date.now() + base });
