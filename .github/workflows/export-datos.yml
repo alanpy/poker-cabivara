@@ -1,0 +1,29 @@
+name: Exportar datos de la liga
+# Exporta el documento publico de Firestore al repo para analisis.
+# (La lectura es publica por las reglas de la liga; no expone nada nuevo.)
+on:
+  push:
+    paths:
+      - '.github/workflows/export-datos.yml'
+      - 'exportar.trigger'
+  workflow_dispatch:
+
+jobs:
+  exportar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bajar datos de Firestore
+        run: |
+          mkdir -p export
+          curl -s "https://firestore.googleapis.com/v1/projects/poker-capivara-1fcc4/databases/(default)/documents/liga/datos" -o export/liga-datos.json
+          head -c 200 export/liga-datos.json
+      - name: Commitear export
+        run: |
+          git config user.name "liga-bot"
+          git config user.email "bot@liga-carpincho"
+          git add export/liga-datos.json
+          git diff --cached --quiet || git commit -m "Export de datos de la liga [skip ci]"
+          git push
