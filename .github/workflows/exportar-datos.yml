@@ -1,0 +1,29 @@
+name: Exportar datos de la liga
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'datos/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exportar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bajar datos de Firestore (lectura publica via reglas)
+        run: |
+          mkdir -p datos
+          curl -s "https://firestore.googleapis.com/v1/projects/poker-capivara-1fcc4/databases/(default)/documents/liga/datos" -o datos/liga.json
+          wc -c datos/liga.json
+      - name: Guardar snapshot en el repo
+        run: |
+          git config user.name "liga-bot"
+          git config user.email "bot@liga-carpincho"
+          git add datos/liga.json
+          git diff --cached --quiet || git commit -m "Snapshot de datos de la liga [skip ci]"
+          git push
